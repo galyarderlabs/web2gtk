@@ -252,7 +252,7 @@ def export_arch_pkgbuild(manifest: AppManifest, output_dir: str = "dist") -> str
     pkg_dir = os.path.join(output_dir, f"{manifest.slug}-pkgbuild")
     os.makedirs(pkg_dir, exist_ok=True)
 
-    pkgbuild_content = f"""# Maintainer: Galyarder <muhamadgalihsaputra@users.noreply.github.com>
+    pkgbuild_content = f"""# Maintainer: Galyarder Labs <muhamadgalihsaputra@users.noreply.github.com>
 pkgname={manifest.slug}
 pkgver=0.1.0
 pkgrel=1

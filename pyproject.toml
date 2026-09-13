@@ -9,7 +9,7 @@ description = "Lightweight, native GTK4/Libadwaita desktop app generator for Lin
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
-    { name = "Galyarder", email = "muhamadgalihsaputra@users.noreply.github.com" }
+    { name = "Galyarder Labs", email = "muhamadgalihsaputra@users.noreply.github.com" }
 ]
 keywords = ["gtk4", "libadwaita", "webkitgtk", "desktop", "linux", "gnome", "web2app"]
 classifiers = [

@@ -87,9 +87,9 @@ class Web2GtkApp(Adw.Application):
         about = Adw.AboutDialog(
             application_name=self.manifest.name,
             application_icon=self.manifest.icon,
-            developer_name="web2gtk",
+            developer_name="Galyarder Labs",
             version="0.1.0",
-            copyright="© 2026 Galyarder",
+            copyright="© 2026 Galyarder Labs",
             comments=f"Lightweight native GTK4/Libadwaita desktop wrapper for {self.manifest.url}",
             website=self.manifest.url,
             issue_url="https://github.com/galyarderlabs/web2gtk"

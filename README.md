@@ -167,4 +167,4 @@ The app will be installed with its own icon, launcher in `~/.local/bin/`, and de
 
 ## License
 
-[MIT License](LICENSE) © 2026 Galyarder (Muhamad Galih Saputra)
+[MIT License](LICENSE) © 2026 Galyarder Labs
