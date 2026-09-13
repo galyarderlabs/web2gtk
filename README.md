@@ -1,10 +1,16 @@
-# web2gtk
+<p align="center">
+  <img src="assets/banner.png" alt="web2gtk banner" width="100%">
+</p>
 
-> **Lightweight, native GTK4 / Libadwaita desktop web app generator for Linux.**  
-> Turn any web application into a first-class native GNOME desktop app without the bloat of Electron or Chromium.
+<p align="center">
+  <strong>Lightweight, native GTK4 / Libadwaita desktop web app generator for Linux.</strong><br>
+  Turn any web application into a first-class native GNOME desktop app without the bloat of Electron or Chromium.
+</p>
 
-[![CI / CD](https://github.com/galyarderlabs/web2gtk/actions/workflows/ci.yml/badge.svg)](https://github.com/galyarderlabs/web2gtk/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<p align="center">
+  <a href="https://github.com/galyarderlabs/web2gtk/actions"><img src="https://github.com/galyarderlabs/web2gtk/actions/workflows/ci.yml/badge.svg" alt="CI / CD"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+</p>
 
 ---
 
