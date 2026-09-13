@@ -8,57 +8,61 @@
 
 ---
 
-## Kenapa web2gtk?
+## Why web2gtk?
 
-Tool generator web-to-desktop yang ada saat ini (seperti Nativefier atau Pake) biasanya memakan ratusan MB disk dan boros RAM karena membundel seluruh browser Chromium di setiap aplikasi.
+Most web-to-desktop app generators (like Nativefier or Pake) bundle entire Chromium runtimes or require heavy dependencies, consuming hundreds of megabytes of disk space and memory for a single web page.
 
-`web2gtk` memanfaatkan engine sistem **WebKitGTK 6.0** dan framework **GTK4 + Libadwaita**:
+`web2gtk` leverages your system's existing **WebKitGTK 6.0** runtime and native **GTK4 + Libadwaita** libraries:
 
-| Fitur | Nativefier (Electron) | Pake (Tauri) | **web2gtk** |
+| Feature | Nativefier (Electron) | Pake (Tauri) | **web2gtk** |
 |---|---|---|---|
-| **Ukuran App** | 150 MB – 300 MB | 15 MB – 30 MB | **< 1 KB** (shared runtime) |
+| **App Bundle Size** | 150 MB – 300 MB | 15 MB – 30 MB | **< 1 KB** (shared system runtime) |
 | **RAM Usage** | 500 MB – 1.2 GB | 150 MB – 300 MB | **80 MB – 150 MB** |
-| **Styling** | Web / Custom frame | Web view wrapper | **100% Native Libadwaita** |
-| **System Tray** | XEmbed / AppIndicator | Webview Tray | **Pure D-Bus StatusNotifierItem** |
+| **Styling & Theming** | Web / Custom frame | Generic webview wrapper | **100% Native Libadwaita** |
+| **System Tray** | XEmbed / AppIndicator | Webview Tray | **Pure D-Bus StatusNotifierItem (SNI)** |
 | **Session Persistence** | Chrome Profile | SQLite / Webview | **Isolated SQLite Cookies & Storage** |
-| **Anti-Bot / Cloudflare** | Rawan terdeteksi | Sering gagal 2FA | **Safari 18 macOS + Stealth engine** |
+| **Anti-Bot / Cloudflare** | Often flagged | May break 2FA | **Safari 18 macOS + Stealth engine** |
 
 ---
 
-## Fitur Utama
+## Key Features
 
-- **Persistent Auth Across Reboots:** Session token dan cookie tersimpan permanen di SQLite (`cookies.sqlite`). Tidak ada lagi auto-logout setelah reboot.
-- **Cloudflare & Bot-Detection Bypass:** Engine WebKit dipasangkan dengan User-Agent Safari macOS, script stealth `navigator.webdriver = false`, dan ITP bypass.
-- **D-Bus System Tray:** Berbasis protokol `org.kde.StatusNotifierItem`. Klik close (X) otomatis menyembunyikan app ke tray (StatusNotifierItem), bukan force quit.
-- **Auto Icon Scraper:** Otomatis mengambil icon resolusi tinggi (`apple-touch-icon`, web manifest, atau SVG) langsung dari URL target dan meresize ke 32x32, 128x128, dan 256x256 PNG.
-- **Full Media & Permissions:** Mendukung WebRTC mikrofon dan kamera (voice chat ChatGPT, Google Meet, dll) serta notifikasi desktop.
-- **OAuth Popup Friendly:** Popup login Google / Apple / Microsoft / GitHub berjalan terintegrasi di window transien tanpa kehilangan session parent.
+- **Persistent Auth Across Reboots:** Session tokens and cookies persist cleanly in SQLite (`cookies.sqlite`). No surprise logouts after rebooting.
+- **Cloudflare & Bot-Detection Bypass:** WebKit engine configured with Safari macOS User-Agent, `navigator.webdriver = false` stealth injection, and disabled ITP.
+- **D-Bus System Tray:** Built on the `org.kde.StatusNotifierItem` protocol. Closing (X) hides the window to the system tray, with dynamic attention status (`NeedsAttention`) when background tasks finish.
+- **Automatic Icon Scraper:** Automatically discovers high-res icons (`apple-touch-icon`, web app manifests, or SVGs) from target URLs and formats them into standard 32x32, 128x128, and 256x256 PNGs.
+- **Full Media & Hardware Permissions:** Supports WebRTC microphone and camera (voice chat in ChatGPT, Google Meet, etc.) and desktop notifications.
+- **OAuth Popup Friendly:** Popup authentication flows (Google, Apple, Microsoft, GitHub) open seamlessly in dedicated transient windows without breaking the parent session.
+- **Export & Share:** Easily export any configured app into a portable standalone `.tar.gz` installer package or Arch Linux `PKGBUILD`.
 
 ---
 
-## Prasyarat Sistem
+## System Prerequisites
 
-Pastikan paket sistem berikut terpasang di distro Linux lu:
+Ensure the following packages are installed on your Linux distribution:
 
 ### Arch Linux / Manjaro
 ```bash
 sudo pacman -S python-gobject gtk4 libadwaita webkitgtk-6.0 libdbusmenu-glib python-pillow python-requests python-beautifulsoup4 librsvg
 ```
 
-### Ubuntu / Debian / Fedora
+### Ubuntu / Debian
 ```bash
 # Ubuntu 24.04+ / Debian 12+
 sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-webkit-6.0 gir1.2-dbusmenu-glib-0.4 python3-pil python3-requests python3-bs4 librsvg2-bin
+```
 
+### Fedora
+```bash
 # Fedora 39+
 sudo dnf install python3-gobject gtk4 libadwaita webkitgtk6.0 libdbusmenu-gtk3 python3-pillow python3-requests python3-beautifulsoup4 librsvg2-tools
 ```
 
 ---
 
-## Instalasi
+## Installation
 
-Clone repositori dan jalankan skrip installer:
+Clone the repository and run the install script:
 
 ```bash
 git clone https://github.com/muhamadgalihsaputra/web2gtk.git
@@ -66,29 +70,29 @@ cd web2gtk
 ./install.sh
 ```
 
-Perintah `web2gtk` dan `web2gtk-runner` akan langsung tersedia di `~/.local/bin/`.
+The commands `web2gtk` and `web2gtk-runner` will be immediately available in `~/.local/bin/`.
 
 ---
 
-## Cara Penggunaan
+## Usage
 
-### 1. Membuat Web App Baru (`create`)
+### 1. Create a New Web App (`create`)
 
-Cukup berikan URL situs target:
+Simply provide the website URL:
 ```bash
-# Otomatis fetch icon & set nama
+# Auto-fetch icon and deduce name
 web2gtk create https://claude.ai --name "Claude"
 
-# Menggunakan icon custom lokal
+# Use a custom local icon
 web2gtk create https://github.com --name "GitHub" --icon ./github.png
 
-# Opsi tanpa system tray
+# Create without system tray
 web2gtk create https://notion.so --name "Notion" --no-tray
 ```
 
-App langsung terintegrasi ke menu aplikasi GNOME (App Grid) dan dapat dijalankan langsung via terminal (misal: `claude-gtk`).
+The app is instantly integrated into your GNOME Application menu (App Grid) and can be executed from terminal (e.g. `claude-gtk`).
 
-### 2. Melihat Daftar Web App (`list`)
+### 2. List Installed Web Apps (`list`)
 
 ```bash
 web2gtk list
@@ -96,71 +100,71 @@ web2gtk list
 
 Output:
 ```text
-SLUG                 NAMA                   URL                                 TRAY   STEALTH 
+SLUG                 NAME                   URL                                 TRAY   STEALTH 
 -----------------------------------------------------------------------------------------------
 claude-gtk           Claude                 https://claude.ai                   Yes    Yes     
 github-gtk           GitHub                 https://github.com                  Yes    Yes     
 ```
 
-### 3. Informasi Detail App (`info`)
+### 3. Inspect App Details (`info`)
 
 ```bash
 web2gtk info claude-gtk
 ```
 
-### 4. Menjalankan App Langsung (`run`)
+### 4. Run an App Directly (`run`)
 
 ```bash
 web2gtk run claude-gtk
 ```
-*(Atau langsung panggil command slug-nya: `claude-gtk`)*
+*(Or directly call its slug command: `claude-gtk`)*
 
-### 5. Menghapus Web App (`remove` / `uninstall`)
+### 5. Remove an App (`remove` / `uninstall`)
 
 ```bash
-# Hapus app dari menu GNOME, launcher, dan icon
+# Remove desktop entry, launcher, and icon
 web2gtk remove claude-gtk
 
-# Hapus app beserta data cookie dan session storage-nya
+# Remove app and purge all session cookies & storage
 web2gtk remove claude-gtk --purge
 ```
 
-### 6. Mengekspor App untuk Dibagikan (`export`)
+### 6. Export for Distribution (`export`)
 
-Ingin membagikan app (misal Claude atau NotebookLM) ke orang lain tanpa mereka harus menginstall `web2gtk`?
+Want to share an app (like Claude, ChatGPT, or NotebookLM) with someone without requiring them to install `web2gtk` first?
 
 ```bash
-# 1. Export jadi standalone installer package (.tar.gz cuma ~13 KB)
+# 1. Export as a standalone portable installer package (.tar.gz, ~13 KB)
 web2gtk export claude-gtk
 
-# 2. Export jadi direktori Arch Linux PKGBUILD
+# 2. Export as an Arch Linux PKGBUILD directory
 web2gtk export claude-gtk --format arch
 ```
 
-Hasil export berupa file `dist/claude-gtk-installer.tar.gz`. Penerima tinggal mengekstrak file tersebut dan menjalankan:
+The exported package will be in `dist/claude-gtk-installer.tar.gz`. The recipient simply extracts it and runs:
 ```bash
 ./install.sh
 ```
-Aplikasi akan langsung terpasang mandiri lengkap dengan icon, launcher di `~/.local/bin/`, dan entry menu desktop GNOME.
+The app will be installed with its own icon, launcher in `~/.local/bin/`, and desktop menu entry.
 
 ---
 
-## Shortcut Keyboard
+## Keyboard Shortcuts
 
-| Shortcut | Aksi |
+| Shortcut | Action |
 |---|---|
-| `Alt + Panah Kiri` | Kembali ke halaman sebelumnya |
-| `Alt + Panah Kanan` | Maju ke halaman berikutnya |
-| `Ctrl + R` | Muat ulang (Reload) |
-| `Ctrl + +` / `Ctrl + -` | Zoom in / Zoom out |
-| `Ctrl + 0` | Reset level zoom |
-| `Ctrl + W` | Sembunyikan ke System Tray (atau tutup) |
-| `Ctrl + Q` | Keluar aplikasi sepenuhnya |
-| `F11` | Mode Layar Penuh (Fullscreen) |
-| `F12` | Buka Web Inspector / Developer Tools |
+| `Alt + Left Arrow` | Navigate Back |
+| `Alt + Right Arrow` | Navigate Forward |
+| `Ctrl + R` | Reload Page |
+| `Ctrl + +` / `Ctrl + -` | Zoom In / Zoom Out |
+| `Ctrl + 0` | Reset Zoom |
+| `Ctrl + W` | Hide to System Tray (or close window) |
+| `Ctrl + Q` | Quit Application |
+| `F11` | Toggle Fullscreen |
+| `F12` | Toggle Web Inspector / Developer Tools |
 
 ---
 
-## Lisensi
+## License
 
 [MIT License](LICENSE) © 2026 Galyarder (Muhamad Galih Saputra)

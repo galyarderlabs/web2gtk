@@ -4,7 +4,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_DIR="$HOME/.local/bin"
 
-echo "==> Memasang web2gtk ke user environment (~/.local/bin)..."
+echo "==> Installing web2gtk into user environment (~/.local/bin)..."
 
 mkdir -p "$BIN_DIR"
 
@@ -21,5 +21,5 @@ mkdir -p "$HOME/.local/share/icons/hicolor/256x256/apps"
 mkdir -p "$HOME/.local/share/applications"
 mkdir -p "$HOME/.config/web2gtk/apps"
 
-echo "==> Selesai! web2gtk dan web2gtk-runner sudah aktif di $BIN_DIR."
-echo "    Coba jalankan: web2gtk --help"
+echo "==> Done! web2gtk and web2gtk-runner are now active in $BIN_DIR."
+echo "    Try running: web2gtk --help"

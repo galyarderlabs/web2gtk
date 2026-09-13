@@ -175,9 +175,9 @@ if command -v gtk-update-icon-cache >/dev/null 2>&1; then
     gtk-update-icon-cache -f -t "$ICON_BASE" 2>/dev/null || true
 fi
 
-echo "==> Selesai! {manifest.name} berhasil dipasang."
-echo "    Bisa langsung dijalankan via terminal: {manifest.slug}"
-echo "    atau cari '{manifest.name}' di menu aplikasi GNOME."
+echo "==> Done! {manifest.name} successfully installed."
+echo "    Can be launched via terminal: {manifest.slug}"
+echo "    or search for '{manifest.name}' in your application menu."
 """
     install_path = os.path.join(bundle_dir, "install.sh")
     with open(install_path, "w", encoding="utf-8") as f:
@@ -188,7 +188,7 @@ echo "    atau cari '{manifest.name}' di menu aplikasi GNOME."
     uninstall_sh = f"""#!/usr/bin/env bash
 set -e
 
-echo "==> Menghapus {manifest.name} dari sistem..."
+echo "==> Removing {manifest.name} from system..."
 
 rm -f "$HOME/.local/bin/{manifest.slug}"
 rm -f "$HOME/.local/share/applications/{manifest.slug}.desktop"
@@ -198,7 +198,7 @@ for size in 32 128 256; do
 done
 
 if [ "$1" == "--purge" ]; then
-    echo "==> Membersihkan data dan cookies session..."
+    echo "==> Purging session data and cookies..."
     rm -rf "$HOME/.local/share/{manifest.slug}"
     rm -rf "$HOME/.cache/{manifest.slug}"
     rm -rf "$HOME/.config/{manifest.slug}"
@@ -211,7 +211,7 @@ if command -v gtk-update-icon-cache >/dev/null 2>&1; then
     gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
 fi
 
-echo "==> {manifest.name} berhasil dihapus."
+echo "==> {manifest.name} successfully removed."
 """
     uninstall_path = os.path.join(bundle_dir, "uninstall.sh")
     with open(uninstall_path, "w", encoding="utf-8") as f:
@@ -222,17 +222,17 @@ echo "==> {manifest.name} berhasil dihapus."
     readme_txt = f"""{manifest.name} Desktop App (Standalone Installer)
 ===================================================
 
-Aplikasi desktop native GTK4/Libadwaita untuk {manifest.name} ({manifest.url}).
-Dibuat menggunakan web2gtk.
+Native GTK4/Libadwaita desktop application for {manifest.name} ({manifest.url}).
+Built using web2gtk.
 
-Cara Install:
+Installation:
   ./install.sh
 
-Cara Uninstall:
+Uninstallation:
   ./uninstall.sh
-  (atau ./uninstall.sh --purge jika ingin menghapus cookies & storage)
+  (or ./uninstall.sh --purge to remove session cookies & persistent storage)
 
-Prasyarat Sistem:
+System Requirements:
   - Python 3.10+
   - PyGObject, GTK4, Libadwaita, WebKitGTK 6.0
 """

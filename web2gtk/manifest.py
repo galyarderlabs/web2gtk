@@ -80,7 +80,7 @@ class AppManifest:
                 path = os.path.join(APPS_DIR, f"{path_or_slug}.json")
 
         if not os.path.exists(path):
-            raise FileNotFoundError(f"Manifest tidak ditemukan untuk: {path_or_slug}")
+            raise FileNotFoundError(f"Manifest not found for: {path_or_slug}")
 
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)

@@ -457,7 +457,7 @@ class Web2GtkWindow(Adw.ApplicationWindow):
             if not self.get_visible() and title != self._last_notified_title:
                 self._last_notified_title = title
                 match = re.match(r"^[\(\u2022\s]*(\d+)[\)\s\u2022]", title)
-                body = f"{match.group(1)} pesan baru" if match else title
+                body = f"{match.group(1)} new messages" if match else title
                 notif = Gio.Notification.new(self.manifest.name)
                 notif.set_body(body)
                 notif.set_priority(Gio.NotificationPriority.HIGH)
@@ -505,7 +505,7 @@ class Web2GtkWindow(Adw.ApplicationWindow):
                 hints,
                 6000
             )
-            print(f"[{self.manifest.slug}] Notifikasi desktop terkirim: {summary} - {body}")
+            print(f"[{self.manifest.slug}] Desktop notification sent: {summary} - {body}")
         except Exception as e:
             print(f"[{self.manifest.slug}] D-Bus notification error: {e}")
 
@@ -530,15 +530,15 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         return True
 
     def on_generation_done(self, manager, js_result):
-        print(f"[{self.manifest.slug}] Selesai generate respon!")
+        print(f"[{self.manifest.slug}] Response generation finished!")
         if not self.is_active() or not self.get_visible():
             self.send_desktop_notification(
                 summary=self.manifest.name,
-                body="Jawaban selesai dibuat",
+                body="Response completed",
                 urgency=2
             )
             if hasattr(self, "tray") and self.tray:
-                self.tray.set_attention(True, f"{self.manifest.name}: Jawaban selesai dibuat")
+                self.tray.set_attention(True, f"{self.manifest.name}: Response completed")
 
     def on_decide_policy(self, web_view, decision, decision_type):
         if decision_type == WebKit.PolicyDecisionType.RESPONSE:
@@ -647,10 +647,10 @@ class Web2GtkWindow(Adw.ApplicationWindow):
 
                 def on_finished(d):
                     filename = os.path.basename(dest_path)
-                    print(f"[{self.manifest.slug}] Download selesai: {dest_path}")
+                    print(f"[{self.manifest.slug}] Download finished: {dest_path}")
                     self.send_desktop_notification(
-                        summary="Download Selesai",
-                        body=f"{filename} tersimpan di ~/Downloads",
+                        summary="Download Complete",
+                        body=f"{filename} saved to ~/Downloads",
                         urgency=2
                     )
                     if hasattr(self, "tray") and self.tray:
@@ -659,7 +659,7 @@ class Web2GtkWindow(Adw.ApplicationWindow):
                 dl.connect("finished", on_finished)
                 dl.connect(
                     "failed",
-                    lambda d, err: print(f"[{self.manifest.slug}] Download gagal: {err.message}")
+                    lambda d, err: print(f"[{self.manifest.slug}] Download failed: {err.message}")
                 )
             except Exception as e:
                 print(f"[{self.manifest.slug}] Download error: {e}")

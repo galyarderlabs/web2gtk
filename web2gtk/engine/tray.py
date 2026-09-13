@@ -111,13 +111,13 @@ class StatusNotifierTray:
 
         # Toggle Show / Hide
         self.item_toggle = Dbusmenu.Menuitem.new()
-        self.item_toggle.property_set("label", "Tampilkan / Sembunyikan")
+        self.item_toggle.property_set("label", "Show / Hide")
         self.item_toggle.connect("item-activated", lambda *_: self.toggle_window())
         self.root_menu.child_append(self.item_toggle)
 
         # Home URL
         self.item_home = Dbusmenu.Menuitem.new()
-        self.item_home.property_set("label", f"Buka {self.manifest.name}")
+        self.item_home.property_set("label", f"Open {self.manifest.name}")
         self.item_home.connect("item-activated", lambda *_: self.open_home())
         self.root_menu.child_append(self.item_home)
 
@@ -128,7 +128,7 @@ class StatusNotifierTray:
 
         # Quit
         self.item_quit = Dbusmenu.Menuitem.new()
-        self.item_quit.property_set("label", "Keluar")
+        self.item_quit.property_set("label", "Quit")
         self.item_quit.connect("item-activated", lambda *_: self.app.quit())
         self.root_menu.child_append(self.item_quit)
 

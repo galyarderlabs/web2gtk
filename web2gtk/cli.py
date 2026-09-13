@@ -28,7 +28,7 @@ def cmd_create(args):
     app_id = args.id or f"io.github.web2gtk.{slug.replace('-', '_')}"
     icon_name = args.icon_name or slug
 
-    print(f"==> Membuat web app untuk '{name}' ({url})...")
+    print(f"==> Creating web app for '{name}' ({url})...")
     manifest = AppManifest(
         name=name,
         url=url,
@@ -41,26 +41,26 @@ def cmd_create(args):
     )
 
     install_app(manifest, icon_path_or_url=args.icon)
-    print(f"==> Berhasil diinstall!")
+    print(f"==> Installed successfully!")
     print(f"    - Launcher: ~/.local/bin/{manifest.slug}")
     print(f"    - Desktop:  ~/.local/share/applications/{manifest.slug}.desktop")
     print(f"    - Manifest: {manifest.manifest_path}")
     print(f"    - Storage:  {manifest.data_dir} (Persistent SQLite Cookies & LocalStorage)")
-    print(f"\nLu bisa langsung jalankan '{manifest.slug}' di terminal atau cari '{manifest.name}' di menu aplikasi.")
+    print(f"\nYou can now launch '{manifest.slug}' from terminal or search for '{manifest.name}' in your applications menu.")
 
     if args.run:
-        print(f"\n==> Menjalankan {manifest.name}...")
+        print(f"\n==> Launching {manifest.name}...")
         run_manifest(manifest)
 
 
 def cmd_list(args):
     apps = AppManifest.list_all()
     if not apps:
-        print("Belum ada web app yang dibuat dengan web2gtk.")
-        print("Jalankan: web2gtk create <url> --name <nama>")
+        print("No web apps installed yet.")
+        print("Run: web2gtk create <url> --name <name>")
         return
 
-    print(f"{'SLUG':<20} {'NAMA':<22} {'URL':<35} {'TRAY':<6} {'STEALTH':<8}")
+    print(f"{'SLUG':<20} {'NAME':<22} {'URL':<35} {'TRAY':<6} {'STEALTH':<8}")
     print("-" * 95)
     for app in apps:
         tray = "Yes" if app.system_tray else "No"
@@ -70,11 +70,11 @@ def cmd_list(args):
 
 def cmd_remove(args):
     slug = args.slug
-    print(f"==> Menghapus web app '{slug}'...")
+    print(f"==> Removing web app '{slug}'...")
     uninstall_app(slug, purge_data=args.purge)
-    print(f"==> Web app '{slug}' berhasil dihapus dari sistem.")
+    print(f"==> Web app '{slug}' successfully removed from system.")
     if args.purge:
-        print("    Data session dan cookies juga telah dibersihkan.")
+        print("    Session data and cookies have also been purged.")
 
 
 def cmd_run(args):
@@ -93,13 +93,13 @@ def cmd_info(args):
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Nama:        {manifest.name}")
+    print(f"Name:        {manifest.name}")
     print(f"Slug:        {manifest.slug}")
     print(f"URL:         {manifest.url}")
     print(f"App ID:      {manifest.app_id}")
     print(f"Icon:        {manifest.icon}")
-    print(f"System Tray: {'Ya' if manifest.system_tray else 'Tidak'}")
-    print(f"Anti-Bot:    {'Ya' if manifest.stealth else 'Tidak'}")
+    print(f"System Tray: {'Yes' if manifest.system_tray else 'No'}")
+    print(f"Anti-Bot:    {'Yes' if manifest.stealth else 'No'}")
     print(f"Data Dir:    {manifest.data_dir}")
     print(f"Cache Dir:   {manifest.cache_dir}")
     print(f"Config Dir:  {manifest.config_dir}")
@@ -118,20 +118,20 @@ def cmd_export(args):
     print(f"==> Exporting '{manifest.name}' ({manifest.slug}) format={fmt}...")
     if fmt in ("standalone", "tar", "tar.gz"):
         out_path = export_standalone(manifest, output_dir=output_dir)
-        print(f"==> Berhasil dibuat paket standalone installer:")
-        print(f"    - Tarball:    {out_path}")
-        print(f"    - Direktori:  {os.path.splitext(os.path.splitext(out_path)[0])[0]}")
-        print(f"\nUntuk membagikan ke orang lain:")
-        print(f"  Kirim file '{out_path}'.")
-        print(f"  Penerima tinggal ekstrak dan jalankan './install.sh'!")
+        print(f"==> Standalone installer package created successfully:")
+        print(f"    - Tarball:   {out_path}")
+        print(f"    - Directory: {os.path.splitext(os.path.splitext(out_path)[0])[0]}")
+        print(f"\nTo share with others:")
+        print(f"  Send the file '{out_path}'.")
+        print(f"  The recipient simply extracts it and runs './install.sh'!")
     elif fmt in ("arch", "pkgbuild"):
         out_path = export_arch_pkgbuild(manifest, output_dir=output_dir)
-        print(f"==> Berhasil digenerate direktori PKGBUILD:")
+        print(f"==> PKGBUILD directory generated successfully:")
         print(f"    - Path: {out_path}")
-        print(f"\nUntuk build paket Arch:")
+        print(f"\nTo build the Arch package:")
         print(f"  cd {out_path} && makepkg -si")
     else:
-        print(f"Format export tidak didukung: {fmt}", file=sys.stderr)
+        print(f"Unsupported export format: {fmt}", file=sys.stderr)
         sys.exit(1)
 
 
