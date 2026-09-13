@@ -125,6 +125,24 @@ web2gtk remove claude-gtk
 web2gtk remove claude-gtk --purge
 ```
 
+### 6. Mengekspor App untuk Dibagikan (`export`)
+
+Ingin membagikan app (misal Claude atau NotebookLM) ke orang lain tanpa mereka harus menginstall `web2gtk`?
+
+```bash
+# 1. Export jadi standalone installer package (.tar.gz cuma ~13 KB)
+web2gtk export claude-gtk
+
+# 2. Export jadi direktori Arch Linux PKGBUILD
+web2gtk export claude-gtk --format arch
+```
+
+Hasil export berupa file `dist/claude-gtk-installer.tar.gz`. Penerima tinggal mengekstrak file tersebut dan menjalankan:
+```bash
+./install.sh
+```
+Aplikasi akan langsung terpasang mandiri lengkap dengan icon, launcher di `~/.local/bin/`, dan entry menu desktop GNOME.
+
 ---
 
 ## Shortcut Keyboard

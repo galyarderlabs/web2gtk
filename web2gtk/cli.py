@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from web2gtk.manifest import AppManifest, slugify
 from web2gtk.generator import install_app, uninstall_app
 from web2gtk.engine.runner import run_manifest
+from web2gtk.exporter import export_standalone, export_arch_pkgbuild
 
 
 def cmd_create(args):
@@ -104,6 +105,36 @@ def cmd_info(args):
     print(f"Config Dir:  {manifest.config_dir}")
 
 
+def cmd_export(args):
+    try:
+        manifest = AppManifest.load(args.slug)
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    fmt = args.format.lower()
+    output_dir = args.output or "dist"
+
+    print(f"==> Exporting '{manifest.name}' ({manifest.slug}) format={fmt}...")
+    if fmt in ("standalone", "tar", "tar.gz"):
+        out_path = export_standalone(manifest, output_dir=output_dir)
+        print(f"==> Berhasil dibuat paket standalone installer:")
+        print(f"    - Tarball:    {out_path}")
+        print(f"    - Direktori:  {os.path.splitext(os.path.splitext(out_path)[0])[0]}")
+        print(f"\nUntuk membagikan ke orang lain:")
+        print(f"  Kirim file '{out_path}'.")
+        print(f"  Penerima tinggal ekstrak dan jalankan './install.sh'!")
+    elif fmt in ("arch", "pkgbuild"):
+        out_path = export_arch_pkgbuild(manifest, output_dir=output_dir)
+        print(f"==> Berhasil digenerate direktori PKGBUILD:")
+        print(f"    - Path: {out_path}")
+        print(f"\nUntuk build paket Arch:")
+        print(f"  cd {out_path} && makepkg -si")
+    else:
+        print(f"Format export tidak didukung: {fmt}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="web2gtk",
@@ -144,6 +175,13 @@ def main():
     info_parser = subparsers.add_parser("info", help="Show details of an installed app")
     info_parser.add_argument("slug", help="Slug of the app")
     info_parser.set_defaults(func=cmd_info)
+
+    # Command: export
+    export_parser = subparsers.add_parser("export", help="Export app into standalone bundle or PKGBUILD")
+    export_parser.add_argument("slug", help="Slug of the app to export")
+    export_parser.add_argument("--format", "-f", choices=["standalone", "arch"], default="standalone", help="Export format (default: standalone)")
+    export_parser.add_argument("--output", "-o", default="dist", help="Output directory (default: dist)")
+    export_parser.set_defaults(func=cmd_export)
 
     args = parser.parse_args()
     if not hasattr(args, "func"):

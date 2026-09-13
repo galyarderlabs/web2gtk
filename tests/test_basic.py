@@ -38,6 +38,22 @@ class TestWeb2Gtk(unittest.TestCase):
         self.assertFalse(os.path.exists(desktop))
         self.assertFalse(os.path.exists(manifest_file))
 
+    def test_export(self):
+        from web2gtk.exporter import export_standalone, export_arch_pkgbuild
+        m = AppManifest(name="Export Test App", url="https://example.com", slug="export-test-gtk")
+        install_app(m)
+
+        tar_path = export_standalone(m, output_dir="/tmp/web2gtk_test_dist")
+        self.assertTrue(os.path.exists(tar_path))
+        self.assertTrue(tar_path.endswith(".tar.gz"))
+
+        arch_dir = export_arch_pkgbuild(m, output_dir="/tmp/web2gtk_test_dist")
+        self.assertTrue(os.path.exists(os.path.join(arch_dir, "PKGBUILD")))
+
+        # Clean up
+        uninstall_app("export-test-gtk", purge_data=True)
+        shutil.rmtree("/tmp/web2gtk_test_dist", ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()
