@@ -126,8 +126,9 @@ FOCUS_SCRIPT = """
 GENERATION_SCRIPT = """
 (function() {
     let wasGenerating = false;
+    let stableCount = 0;
 
-    function checkGenerating() {
+    function isStreaming() {
         const stopBtn = document.querySelector(
             'button[data-testid="stop-button"], ' +
             'button[aria-label*="Stop"], ' +
@@ -135,17 +136,36 @@ GENERATION_SCRIPT = """
             'button[aria-label*="Berhenti"], ' +
             'button[data-testid*="stop"]'
         );
-        const isGenerating = !!stopBtn;
+        if (stopBtn) return true;
 
-        if (wasGenerating && !isGenerating) {
-            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.generation_done) {
-                window.webkit.messageHandlers.generation_done.postMessage("done");
-            }
+        if (document.querySelector('.result-streaming, [data-is-streaming="true"]')) {
+            return true;
         }
-        wasGenerating = isGenerating;
+
+        const rectIcon = document.querySelector('button svg rect');
+        if (rectIcon && rectIcon.closest('button')) return true;
+
+        return false;
     }
 
-    setInterval(checkGenerating, 400);
+    function checkLoop() {
+        const generating = isStreaming();
+        if (generating) {
+            wasGenerating = true;
+            stableCount = 0;
+        } else if (wasGenerating) {
+            stableCount++;
+            if (stableCount >= 2) {
+                wasGenerating = false;
+                stableCount = 0;
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.generation_done) {
+                    window.webkit.messageHandlers.generation_done.postMessage("done");
+                }
+            }
+        }
+    }
+
+    setInterval(checkLoop, 300);
 })();
 """
 
@@ -457,26 +477,68 @@ class Web2GtkWindow(Adw.ApplicationWindow):
             except Exception:
                 pass
 
+    def send_desktop_notification(self, summary, body, urgency=2):
+        """Send desktop notification via direct D-Bus with fallback to GApplication."""
+        try:
+            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+            proxy = Gio.DBusProxy.new_sync(
+                bus,
+                Gio.DBusProxyFlags.NONE,
+                None,
+                "org.freedesktop.Notifications",
+                "/org/freedesktop/Notifications",
+                "org.freedesktop.Notifications",
+                None
+            )
+            hints = {
+                "desktop-entry": GLib.Variant("s", self.manifest.slug),
+                "urgency": GLib.Variant("y", urgency),
+            }
+            proxy.Notify(
+                "(susssasa{sv}i)",
+                self.manifest.name,
+                0,
+                self.manifest.icon,
+                summary,
+                body,
+                [],
+                hints,
+                6000
+            )
+            print(f"[{self.manifest.slug}] Notifikasi desktop terkirim: {summary} - {body}")
+        except Exception as e:
+            print(f"[{self.manifest.slug}] D-Bus notification error: {e}")
+
+        try:
+            notif = Gio.Notification.new(summary)
+            notif.set_body(body)
+            notif.set_priority(Gio.NotificationPriority.HIGH)
+            self.app.send_notification(f"{self.manifest.slug}-notify", notif)
+        except Exception:
+            pass
+
     def on_window_active_changed(self, *_):
         if self.is_active():
             self.web_view.grab_focus()
+            if hasattr(self, "tray") and self.tray:
+                self.tray.set_attention(False)
 
     def on_show_notification(self, web_view, notification):
         title = notification.get_title() or self.manifest.name
         body = notification.get_body() or ""
-        notif = Gio.Notification.new(title)
-        if body:
-            notif.set_body(body)
-        notif.set_priority(Gio.NotificationPriority.HIGH)
-        self.app.send_notification(f"{self.manifest.slug}-web-notif", notif)
+        self.send_desktop_notification(title, body, urgency=1)
         return True
 
     def on_generation_done(self, manager, js_result):
-        if not self.get_visible() or not self.is_active():
-            notif = Gio.Notification.new(self.manifest.name)
-            notif.set_body("Jawaban selesai dibuat")
-            notif.set_priority(Gio.NotificationPriority.HIGH)
-            self.app.send_notification(f"{self.manifest.slug}-generation-done", notif)
+        print(f"[{self.manifest.slug}] Selesai generate respon!")
+        if not self.is_active() or not self.get_visible():
+            self.send_desktop_notification(
+                summary=self.manifest.name,
+                body="Jawaban selesai dibuat",
+                urgency=2
+            )
+            if hasattr(self, "tray") and self.tray:
+                self.tray.set_attention(True, f"{self.manifest.name}: Jawaban selesai dibuat")
 
     def on_decide_policy(self, web_view, decision, decision_type):
         if decision_type == WebKit.PolicyDecisionType.RESPONSE:
@@ -584,11 +646,15 @@ class Web2GtkWindow(Adw.ApplicationWindow):
                 dl.set_destination(dest_path)
 
                 def on_finished(d):
+                    filename = os.path.basename(dest_path)
                     print(f"[{self.manifest.slug}] Download selesai: {dest_path}")
-                    notif = Gio.Notification.new("Download Selesai")
-                    notif.set_body(os.path.basename(dest_path))
-                    notif.set_priority(Gio.NotificationPriority.HIGH)
-                    self.app.send_notification(f"{self.manifest.slug}-download-finished", notif)
+                    self.send_desktop_notification(
+                        summary="Download Selesai",
+                        body=f"{filename} tersimpan di ~/Downloads",
+                        urgency=2
+                    )
+                    if hasattr(self, "tray") and self.tray:
+                        self.tray.set_attention(True, f"Download: {filename}")
 
                 dl.connect("finished", on_finished)
                 dl.connect(

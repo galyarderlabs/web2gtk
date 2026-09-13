@@ -71,6 +71,7 @@ class StandaloneApp(Adw.Application):
             self.win = Web2GtkWindow(self, self.manifest)
             if self.manifest.system_tray:
                 self.tray = StatusNotifierTray(self, self.win, self.manifest)
+                self.win.tray = self.tray
         self.win.set_visible(True)
         self.win.present()
         self.win.web_view.grab_focus()

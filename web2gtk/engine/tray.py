@@ -54,6 +54,8 @@ class StatusNotifierTray:
         self.app = app
         self.window = window
         self.manifest = manifest
+        self._status = "Active"
+        self._title = self.manifest.name
         self.bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
         self.node_info = Gio.DBusNodeInfo.new_for_xml(SNI_XML)
 
@@ -75,6 +77,33 @@ class StatusNotifierTray:
 
         # Register with StatusNotifierWatcher
         self.register_watcher()
+
+    def set_attention(self, needs_attention=True, title=None):
+        new_status = "NeedsAttention" if needs_attention else "Active"
+        if self._status != new_status or (title and title != self._title):
+            self._status = new_status
+            if title:
+                self._title = title
+            elif not needs_attention:
+                self._title = self.manifest.name
+
+            try:
+                self.bus.emit_signal(
+                    None,
+                    self.object_path,
+                    "org.kde.StatusNotifierItem",
+                    "NewStatus",
+                    GLib.Variant("(s)", (self._status,))
+                )
+                self.bus.emit_signal(
+                    None,
+                    self.object_path,
+                    "org.kde.StatusNotifierItem",
+                    "NewTitle",
+                    None
+                )
+            except Exception as e:
+                print(f"[{self.manifest.slug}] Tray signal error: {e}")
 
     def setup_menu(self):
         self.menu_server = Dbusmenu.Server.new(self.menu_path)
@@ -135,12 +164,12 @@ class StatusNotifierTray:
         props = {
             "Category": GLib.Variant("s", "ApplicationStatus"),
             "Id": GLib.Variant("s", self.manifest.slug),
-            "Title": GLib.Variant("s", self.manifest.name),
-            "Status": GLib.Variant("s", "Active"),
+            "Title": GLib.Variant("s", self._title),
+            "Status": GLib.Variant("s", self._status),
             "WindowId": GLib.Variant("i", 0),
             "IconName": GLib.Variant("s", self.manifest.icon),
             "OverlayIconName": GLib.Variant("s", ""),
-            "AttentionIconName": GLib.Variant("s", ""),
+            "AttentionIconName": GLib.Variant("s", self.manifest.icon),
             "AttentionMovieName": GLib.Variant("s", ""),
             "IconThemePath": GLib.Variant("s", ""),
             "Menu": GLib.Variant("o", self.menu_path),
@@ -152,10 +181,14 @@ class StatusNotifierTray:
         if self.window.is_visible() and self.window.is_active():
             self.window.set_visible(False)
         else:
+            self.set_attention(False)
             self.window.set_visible(True)
             self.window.present()
+            self.window.web_view.grab_focus()
 
     def open_home(self):
+        self.set_attention(False)
         self.window.set_visible(True)
         self.window.present()
+        self.window.web_view.grab_focus()
         self.window.web_view.load_uri(self.manifest.url)
