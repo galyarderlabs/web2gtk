@@ -32,6 +32,7 @@ class AppManifest:
     stealth: bool = True
     persistent_storage: bool = True
     system_tray: bool = True
+    adblock: bool = True
     window: Dict[str, Any] = field(default_factory=lambda: {"width": 1080, "height": 800, "is_maximized": False})
 
     def __post_init__(self):

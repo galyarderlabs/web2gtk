@@ -32,6 +32,7 @@ def export_standalone(manifest: AppManifest, output_dir: str = "dist") -> str:
     shutil.copy2(os.path.join(WEB2GTK_DIR, "manifest.py"), os.path.join(bundle_dir, "app", "manifest.py"))
     shutil.copy2(os.path.join(WEB2GTK_DIR, "engine", "window.py"), os.path.join(bundle_dir, "app", "window.py"))
     shutil.copy2(os.path.join(WEB2GTK_DIR, "engine", "tray.py"), os.path.join(bundle_dir, "app", "tray.py"))
+    shutil.copy2(os.path.join(WEB2GTK_DIR, "engine", "adblock.py"), os.path.join(bundle_dir, "app", "adblock.py"))
 
     # Runner script inside app/
     runner_src = f"""#!/usr/bin/env python3

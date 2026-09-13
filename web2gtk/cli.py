@@ -37,7 +37,8 @@ def cmd_create(args):
         icon=icon_name,
         stealth=not args.no_stealth,
         persistent_storage=not args.no_persistent,
-        system_tray=not args.no_tray
+        system_tray=not args.no_tray,
+        adblock=not args.no_adblock
     )
 
     install_app(manifest, icon_path_or_url=args.icon)
@@ -60,12 +61,13 @@ def cmd_list(args):
         print("Run: web2gtk create <url> --name <name>")
         return
 
-    print(f"{'SLUG':<20} {'NAME':<22} {'URL':<35} {'TRAY':<6} {'STEALTH':<8}")
-    print("-" * 95)
+    print(f"{'SLUG':<20} {'NAME':<22} {'URL':<32} {'TRAY':<6} {'STEALTH':<8} {'ADBLOCK':<8}")
+    print("-" * 102)
     for app in apps:
         tray = "Yes" if app.system_tray else "No"
         stealth = "Yes" if app.stealth else "No"
-        print(f"{app.slug:<20} {app.name:<22} {app.url:<35} {tray:<6} {stealth:<8}")
+        adblock = "Yes" if getattr(app, "adblock", True) else "No"
+        print(f"{app.slug:<20} {app.name:<22} {app.url:<32} {tray:<6} {stealth:<8} {adblock:<8}")
 
 
 def cmd_remove(args):
@@ -100,6 +102,7 @@ def cmd_info(args):
     print(f"Icon:        {manifest.icon}")
     print(f"System Tray: {'Yes' if manifest.system_tray else 'No'}")
     print(f"Anti-Bot:    {'Yes' if manifest.stealth else 'No'}")
+    print(f"Adblock:     {'Yes' if getattr(manifest, 'adblock', True) else 'No'}")
     print(f"Data Dir:    {manifest.data_dir}")
     print(f"Cache Dir:   {manifest.cache_dir}")
     print(f"Config Dir:  {manifest.config_dir}")
@@ -153,6 +156,7 @@ def main():
     create_parser.add_argument("--no-tray", action="store_true", help="Disable D-Bus system tray")
     create_parser.add_argument("--no-stealth", action="store_true", help="Disable anti-bot stealth script")
     create_parser.add_argument("--no-persistent", action="store_true", help="Use ephemeral in-memory session")
+    create_parser.add_argument("--no-adblock", action="store_true", help="Disable built-in adblocker and YouTube ad-skipping")
     create_parser.add_argument("--run", "-r", action="store_true", help="Launch immediately after creation")
     create_parser.set_defaults(func=cmd_create)
 

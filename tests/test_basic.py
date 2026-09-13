@@ -17,6 +17,7 @@ class TestWeb2Gtk(unittest.TestCase):
         self.assertTrue(m.stealth)
         self.assertTrue(m.persistent_storage)
         self.assertTrue(m.system_tray)
+        self.assertTrue(m.adblock)
 
     def test_install_and_uninstall(self):
         m = AppManifest(name="Mock Unit Test", url="https://example.com", slug="mock-test-gtk")

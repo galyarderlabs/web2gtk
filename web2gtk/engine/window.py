@@ -13,6 +13,11 @@ gi.require_version('Gio', '2.0')
 
 from gi.repository import Gtk, Adw, WebKit, GLib, Gdk, Gio
 
+try:
+    from web2gtk.engine.adblock import setup_adblock
+except ImportError:
+    from adblock import setup_adblock
+
 STEALTH_SCRIPT = """
 try {
     Object.defineProperty(navigator, 'webdriver', {
@@ -254,6 +259,10 @@ class Web2GtkWindow(Adw.ApplicationWindow):
             "script-message-received::generation_done",
             self.on_generation_done
         )
+
+        # Setup built-in adblocking & YouTube ad-skipping
+        if getattr(self.manifest, "adblock", True):
+            setup_adblock(self.user_content_manager, self.manifest.cache_dir, self.manifest.url)
 
         # Ensure keyboard focus is on web_view when window becomes active
         self.connect("notify::is-active", self.on_window_active_changed)
