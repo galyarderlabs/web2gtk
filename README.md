@@ -171,6 +171,12 @@ The app will be installed with its own icon, launcher in `~/.local/bin/`, and de
 
 ---
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for upcoming milestones, planned features (AUR package, Flatpak, optional Libadwaita GUI Manager), and project guiding principles.
+
+---
+
 ## License
 
 [MIT License](LICENSE) © 2026 Galyarder Labs
