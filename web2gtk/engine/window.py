@@ -79,24 +79,35 @@ def is_same_app_domain(url_str, app_url):
     return False
 
 
-# Auto-focus the chat input field with continuous polling, DOM observer, and window focus hooks.
+LLM_CHAT_DOMAINS = (
+    "chatgpt.com",
+    "claude.ai",
+    "gemini.google.com",
+    "chat.mistral.ai",
+)
+
+
+def is_llm_chat_app(url_str):
+    if not url_str:
+        return False
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(url_str).netloc.lower()
+        return any(d in host for d in LLM_CHAT_DOMAINS)
+    except Exception:
+        return False
+
+
+# Auto-focus the chat input field gently on page load for AI chat apps
 FOCUS_SCRIPT = """
 (function() {
-    function focusInput() {
-        const selectors = [
-            '#prompt-textarea',
-            'textarea[tabindex="0"]',
-            'textarea',
-            '[contenteditable="true"]',
-            'input[type="text"]',
-            'input:not([type="hidden"])'
-        ];
-        for (const s of selectors) {
-            const el = document.querySelector(s);
-            if (el && el.offsetParent !== null && !el.disabled) {
-                el.focus();
-                return true;
-            }
+    function focusChat() {
+        const input = document.querySelector(
+            '#prompt-textarea, textarea[tabindex="0"], textarea, [contenteditable="true"]'
+        );
+        if (input && document.activeElement !== input) {
+            input.focus();
+            return true;
         }
         return false;
     }
@@ -104,26 +115,10 @@ FOCUS_SCRIPT = """
     let count = 0;
     const interval = setInterval(() => {
         count++;
-        if (focusInput() || count > 30) {
+        if (focusChat() || count > 15) {
             clearInterval(interval);
         }
-    }, 200);
-
-    window.addEventListener('focus', () => {
-        focusInput();
-    });
-
-    if (window.MutationObserver) {
-        let obsCount = 0;
-        const observer = new MutationObserver(() => {
-            obsCount++;
-            if (focusInput() || obsCount > 25) {
-                observer.disconnect();
-            }
-        });
-        observer.observe(document.documentElement, { childList: true, subtree: true });
-        setTimeout(() => observer.disconnect(), 10000);
-    }
+    }, 250);
 })();
 """
 
@@ -220,7 +215,7 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         # Disable ITP for reliable cross-origin auth flows
         self.session.set_itp_enabled(False)
 
-        # WebKit Settings
+        # WebKit Settings & GPU Hardware Acceleration
         self.settings = WebKit.Settings()
         self.settings.set_user_agent(self.manifest.user_agent)
         self.settings.set_enable_developer_extras(True)
@@ -228,6 +223,17 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         self.settings.set_enable_media_stream(True)
         self.settings.set_javascript_can_access_clipboard(True)
         self.settings.set_javascript_can_open_windows_automatically(True)
+
+        # Performance & GPU hardware acceleration
+        self.settings.set_hardware_acceleration_policy(WebKit.HardwareAccelerationPolicy.ALWAYS)
+        self.settings.set_enable_smooth_scrolling(True)
+        self.settings.set_enable_2d_canvas_acceleration(True)
+        self.settings.set_enable_webgl(True)
+        self.settings.set_enable_media(True)
+        self.settings.set_enable_mediasource(True)
+        self.settings.set_enable_media_capabilities(True)
+        self.settings.set_media_playback_allows_inline(True)
+        self.settings.set_media_playback_requires_user_gesture(False)
 
         # User Content Manager
         self.user_content_manager = WebKit.UserContentManager()
@@ -239,26 +245,26 @@ class Web2GtkWindow(Adw.ApplicationWindow):
             )
             self.user_content_manager.add_script(stealth_script)
 
-        # Auto-focus chat input field on page load
-        focus_user_script = WebKit.UserScript(
-            source=FOCUS_SCRIPT,
-            injected_frames=WebKit.UserContentInjectedFrames.ALL_FRAMES,
-            injection_time=WebKit.UserScriptInjectionTime.END
-        )
-        self.user_content_manager.add_script(focus_user_script)
+        # Only inject LLM-specific chat helpers (auto-focus and generation done signals) for AI chat apps
+        if is_llm_chat_app(self.manifest.url):
+            focus_user_script = WebKit.UserScript(
+                source=FOCUS_SCRIPT,
+                injected_frames=WebKit.UserContentInjectedFrames.ALL_FRAMES,
+                injection_time=WebKit.UserScriptInjectionTime.END
+            )
+            self.user_content_manager.add_script(focus_user_script)
 
-        # Monitor generation completion
-        generation_user_script = WebKit.UserScript(
-            source=GENERATION_SCRIPT,
-            injected_frames=WebKit.UserContentInjectedFrames.ALL_FRAMES,
-            injection_time=WebKit.UserScriptInjectionTime.END
-        )
-        self.user_content_manager.add_script(generation_user_script)
-        self.user_content_manager.register_script_message_handler("generation_done")
-        self.user_content_manager.connect(
-            "script-message-received::generation_done",
-            self.on_generation_done
-        )
+            generation_user_script = WebKit.UserScript(
+                source=GENERATION_SCRIPT,
+                injected_frames=WebKit.UserContentInjectedFrames.ALL_FRAMES,
+                injection_time=WebKit.UserScriptInjectionTime.END
+            )
+            self.user_content_manager.add_script(generation_user_script)
+            self.user_content_manager.register_script_message_handler("generation_done")
+            self.user_content_manager.connect(
+                "script-message-received::generation_done",
+                self.on_generation_done
+            )
 
         # Setup built-in adblocking & YouTube ad-skipping
         if getattr(self.manifest, "adblock", True):
@@ -337,6 +343,7 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         self.web_view.connect("notify::title", self.on_title_changed)
         self.web_view.connect("notify::uri", self.on_uri_changed)
         self.web_view.connect("load-changed", self.on_load_changed)
+        self.web_view.connect("load-failed", self.on_load_failed)
         self.web_view.connect("create", self.on_create_popup)
         self.web_view.connect("permission-request", self.on_permission_request)
         self.web_view.connect("show-notification", self.on_show_notification)
@@ -562,6 +569,12 @@ class Web2GtkWindow(Adw.ApplicationWindow):
             self.btn_back.set_sensitive(web_view.can_go_back())
             self.btn_forward.set_sensitive(web_view.can_go_forward())
             self.web_view.grab_focus()
+
+    def on_load_failed(self, web_view, load_event, failing_uri, error):
+        """Ignore navigation cancellations (e.g. client redirects, pushState) to avoid error pages."""
+        if getattr(error, "code", None) == 302 or "cancelled" in str(error).lower():
+            return True
+        return False
 
     def on_create_popup(self, web_view, navigation_action):
         """Handle popup windows (OAuth logins) and route external links to default browser."""

@@ -48,49 +48,60 @@ ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"] {
 }
 """
 
-# Dynamic high-speed YouTube ad skipper script
+# Dynamic high-speed YouTube ad skipper script with seamless playback restoration
 YOUTUBE_ADBLOCK_SCRIPT = """
 (function() {
-    function skipAd() {
+    let wasAd = false;
+
+    function handleAds() {
         const player = document.querySelector('#movie_player, .html5-video-player');
-        const video = document.querySelector('video');
+        const video = document.querySelector('#movie_player video, video');
+        if (!player || !video) return;
 
-        // Check if an ad is actively playing
-        if (player && player.classList && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting'))) {
-            if (video && !isNaN(video.duration) && isFinite(video.duration)) {
-                video.playbackRate = 16.0;
-                video.muted = true;
-                video.currentTime = video.duration;
+        const isAd = player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
+
+        if (isAd) {
+            wasAd = true;
+            video.muted = true;
+            // Fast forward without reaching full duration to avoid triggering HTML5 'ended' pause
+            if (isFinite(video.duration) && video.duration > 0.5) {
+                video.currentTime = video.duration - 0.2;
+            }
+            video.playbackRate = 16.0;
+
+            // Auto-click any skip button if present
+            const skipButtons = document.querySelectorAll(
+                '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-slot button, button.ytp-ad-skip-button'
+            );
+            for (const btn of skipButtons) {
+                if (btn && typeof btn.click === 'function') {
+                    btn.click();
+                }
+            }
+
+            // Force play if paused during ad
+            if (video.paused) {
+                video.play().catch(() => {});
+            }
+        } else if (wasAd) {
+            // Ad completed: restore normal audio and playback instantly
+            wasAd = false;
+            video.muted = false;
+            video.playbackRate = 1.0;
+            if (video.paused) {
+                video.play().catch(() => {});
             }
         }
 
-        // Auto-click any skip button if present
-        const skipButtons = document.querySelectorAll(
-            '.ytp-ad-skip-button, .ytp-skip-ad-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-slot button, button.ytp-ad-skip-button'
-        );
-        for (const btn of skipButtons) {
-            if (btn && typeof btn.click === 'function') {
-                btn.click();
-            }
-        }
-
-        // Dismiss interstitial modal overlay if shown
-        const dismissBtn = document.querySelector('tp-yt-paper-dialog #dismiss-button');
+        // Dismiss interstitial modal overlays
+        const dismissBtn = document.querySelector('tp-yt-paper-dialog #dismiss-button, #dismiss-button');
         if (dismissBtn && typeof dismissBtn.click === 'function') {
             dismissBtn.click();
         }
     }
 
-    // High frequency check during page playback
-    setInterval(skipAd, 150);
-
-    // Observe DOM mutations for instant response
-    if (window.MutationObserver) {
-        const observer = new MutationObserver(() => {
-            skipAd();
-        });
-        observer.observe(document.documentElement, { childList: true, subtree: true });
-    }
+    // Lightweight interval without expensive DOM subtree MutationObserver
+    setInterval(handleAds, 200);
 })();
 """
 
