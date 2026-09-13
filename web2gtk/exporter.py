@@ -73,6 +73,7 @@ class StandaloneApp(Adw.Application):
                 self.tray = StatusNotifierTray(self, self.win, self.manifest)
         self.win.set_visible(True)
         self.win.present()
+        self.win.web_view.grab_focus()
 
     def do_open(self, files, hint):
         self.do_activate()
