@@ -92,7 +92,7 @@ class Web2GtkApp(Adw.Application):
             copyright="© 2026 Galyarder",
             comments=f"Lightweight native GTK4/Libadwaita desktop wrapper for {self.manifest.url}",
             website=self.manifest.url,
-            issue_url="https://github.com/muhamadgalihsaputra/web2gtk"
+            issue_url="https://github.com/galyarderlabs/web2gtk"
         )
         about.present(self.win)
 

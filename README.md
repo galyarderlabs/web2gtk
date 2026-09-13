@@ -3,7 +3,7 @@
 > **Lightweight, native GTK4 / Libadwaita desktop web app generator for Linux.**  
 > Turn any web application into a first-class native GNOME desktop app without the bloat of Electron or Chromium.
 
-[![CI / CD](https://github.com/muhamadgalihsaputra/web2gtk/actions/workflows/ci.yml/badge.svg)](https://github.com/muhamadgalihsaputra/web2gtk/actions)
+[![CI / CD](https://github.com/galyarderlabs/web2gtk/actions/workflows/ci.yml/badge.svg)](https://github.com/galyarderlabs/web2gtk/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
@@ -65,7 +65,7 @@ sudo dnf install python3-gobject gtk4 libadwaita webkitgtk6.0 libdbusmenu-gtk3 p
 Clone the repository and run the install script:
 
 ```bash
-git clone https://github.com/muhamadgalihsaputra/web2gtk.git
+git clone https://github.com/galyarderlabs/web2gtk.git
 cd web2gtk
 ./install.sh
 ```
