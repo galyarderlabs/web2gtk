@@ -176,7 +176,7 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         self.web_view.connect("load-changed", self.on_load_changed)
         self.web_view.connect("create", self.on_create_popup)
         self.web_view.connect("permission-request", self.on_permission_request)
-        self.web_view.connect("download-started", self.on_download_started)
+        self.session.connect("download-started", self.on_download_started)
 
         # Keyboard shortcuts
         self.setup_shortcuts()
@@ -366,40 +366,33 @@ class Web2GtkWindow(Adw.ApplicationWindow):
             return True
         return False
 
-    def on_download_started(self, web_view, download):
+    def on_download_started(self, session, download):
         """Route downloads to ~/Downloads with non-clobbering filenames."""
-        try:
-            os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-            suggested = ""
-            response = download.get_response()
-            if response:
-                suggested = response.get_suggested_filename() or ""
-            if not suggested:
-                request = download.get_request()
-                if request:
-                    uri = request.get_uri() or ""
-                    suggested = uri.rsplit("/", 1)[-1] or "download"
-            if not suggested:
-                suggested = "download"
+        def on_decide_destination(dl, suggested_filename):
+            try:
+                os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+                filename = suggested_filename or "download"
+                dest_path = os.path.join(DOWNLOAD_DIR, filename)
+                base, ext = os.path.splitext(dest_path)
+                counter = 1
+                while os.path.exists(dest_path):
+                    dest_path = f"{base} ({counter}){ext}"
+                    counter += 1
 
-            dest_path = os.path.join(DOWNLOAD_DIR, suggested)
-            base, ext = os.path.splitext(dest_path)
-            counter = 1
-            while os.path.exists(dest_path):
-                dest_path = f"{base} ({counter}){ext}"
-                counter += 1
+                dl.set_destination(GLib.filename_to_uri(dest_path))
+                dl.connect(
+                    "finished",
+                    lambda d: print(f"[{self.manifest.slug}] Download selesai: {dest_path}")
+                )
+                dl.connect(
+                    "failed",
+                    lambda d, err: print(f"[{self.manifest.slug}] Download gagal: {err.message}")
+                )
+            except Exception as e:
+                print(f"[{self.manifest.slug}] Download error: {e}")
+            return True
 
-            download.set_destination(GLib.filename_to_uri(dest_path))
-            download.connect(
-                "finished",
-                lambda d: print(f"[{self.manifest.slug}] Download selesai: {dest_path}")
-            )
-            download.connect(
-                "failed",
-                lambda d, err: print(f"[{self.manifest.slug}] Download gagal: {err.message}")
-            )
-        except Exception as e:
-            print(f"[{self.manifest.slug}] Download error: {e}")
+        download.connect("decide-destination", on_decide_destination)
 
     def load_window_state(self):
         try:
