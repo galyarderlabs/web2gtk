@@ -550,8 +550,8 @@ class Web2GtkWindow(Adw.ApplicationWindow):
             self.settings.set_enable_smooth_scrolling(False)
         else:
             self.settings.set_enable_smooth_scrolling(True)
-        # Disable experimental 2D canvas acceleration on Linux to prevent GPU sync stalls on canvas web apps (Chess.com, etc.)
-        self.settings.set_enable_2d_canvas_acceleration(False)
+        # Enable 2D canvas acceleration via Skia GPU backend to avoid CPU-GPU texture upload stalls
+        self.settings.set_enable_2d_canvas_acceleration(True)
         self.settings.set_enable_webgl(True)
         self.settings.set_enable_media(True)
         self.settings.set_enable_mediasource(True)
