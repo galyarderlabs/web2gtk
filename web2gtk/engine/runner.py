@@ -7,6 +7,15 @@ os.environ.setdefault("LIBVA_DRIVER_NAME", "iHD")
 os.environ.setdefault("GST_VAAPI_ALL_DRIVERS", "1")
 os.environ.setdefault("GST_REGISTRY_FORK", "no")
 
+# Reset process niceness if inherited from high-priority parent (e.g. gnome-shell at -12)
+# Ensures GNOME Shell compositor always has 100% preemption priority over WebKit
+try:
+    current_nice = os.nice(0)
+    if current_nice < 0:
+        os.nice(-current_nice)
+except Exception:
+    pass
+
 import gi
 
 gi.require_version('Gtk', '4.0')

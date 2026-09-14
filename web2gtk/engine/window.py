@@ -155,6 +155,36 @@ AUDIO_CLEANUP_SCRIPT = """
                 });
             }
 
+            setAttribute(name, val) {
+                if (name === 'src') this.src = val;
+                else if (name === 'preload') this.preload = val;
+            }
+            getAttribute(name) {
+                if (name === 'src') return this.src;
+                if (name === 'preload') return 'none';
+                return null;
+            }
+            removeAttribute(name) {
+                if (name === 'src') this.src = '';
+            }
+            hasAttribute(name) {
+                if (name === 'src') return !!this._src;
+                return false;
+            }
+
+            get onended() { return this._onended; }
+            set onended(fn) {
+                if (this._onended) this.removeEventListener('ended', this._onended);
+                this._onended = fn;
+                if (fn) this.addEventListener('ended', fn);
+            }
+            get onplay() { return this._onplay; }
+            set onplay(fn) {
+                if (this._onplay) this.removeEventListener('play', this._onplay);
+                this._onplay = fn;
+                if (fn) this.addEventListener('play', fn);
+            }
+
             pause() {
                 this._paused = true;
                 if (this._currentPlayer) {
@@ -177,6 +207,15 @@ AUDIO_CLEANUP_SCRIPT = """
         Object.setPrototypeOf(VirtualAudio, OrigAudio);
         window.Audio = VirtualAudio;
         VirtualAudio.prototype.constructor = VirtualAudio;
+
+        // Route document.createElement('audio') to VirtualAudio to eliminate dormant GStreamer pipelines
+        const origCreateElement = document.createElement;
+        document.createElement = function(tagName, ...args) {
+            if (typeof tagName === 'string' && tagName.toLowerCase() === 'audio') {
+                return new window.Audio();
+            }
+            return origCreateElement.call(this, tagName, ...args);
+        };
     } catch(e) {}
 })();
 """
@@ -505,7 +544,7 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         self.settings.set_javascript_can_open_windows_automatically(True)
 
         # Performance & GPU hardware acceleration
-        self.settings.set_hardware_acceleration_policy(WebKit.HardwareAccelerationPolicy.ALWAYS)
+        self.settings.set_hardware_acceleration_policy(WebKit.HardwareAccelerationPolicy.ON_DEMAND)
         # TikTok feed relies on discrete snap actions; disable smooth scrolling interpolation to prevent micro-delta lag
         if is_tiktok_app(self.manifest.url):
             self.settings.set_enable_smooth_scrolling(False)
