@@ -14,7 +14,7 @@ class TestWeb2Gtk(unittest.TestCase):
         m = AppManifest(name="Test Web", url="https://example.com")
         self.assertEqual(m.slug, "test-web-gtk")
         self.assertEqual(m.app_id, "io.github.web2gtk.test_web_gtk")
-        self.assertTrue(m.stealth)
+        self.assertFalse(m.stealth)
         self.assertTrue(m.persistent_storage)
         self.assertTrue(m.system_tray)
         self.assertTrue(m.adblock)

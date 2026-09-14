@@ -28,10 +28,6 @@ COMMON_AD_RULES = [
     {"trigger": {"url-filter": r".*pubmatic\.com/.*"}, "action": {"type": "block"}},
     {"trigger": {"url-filter": r".*rubiconproject\.com/.*"}, "action": {"type": "block"}},
     {"trigger": {"url-filter": r".*adservice\.google\..*"}, "action": {"type": "block"}},
-    {"trigger": {"url-filter": r".*youtube\.com/pagead/.*"}, "action": {"type": "block"}},
-    {"trigger": {"url-filter": r".*youtube\.com/api/stats/ads.*"}, "action": {"type": "block"}},
-    {"trigger": {"url-filter": r".*youtube\.com/ptracking.*"}, "action": {"type": "block"}},
-    {"trigger": {"url-filter": r".*youtube\.com/youtubei/v1/player/ad_break.*"}, "action": {"type": "block"}},
 ]
 
 # YouTube-specific cosmetic ad hiding CSS
@@ -57,66 +53,7 @@ tp-yt-iron-overlay-backdrop[opened] {
 # Dynamic high-speed YouTube ad stripper & non-destructive fast-forward script
 YOUTUBE_ADBLOCK_SCRIPT = """
 (function() {
-    // 1. Prune ad placements and anti-adblock modals from initial player response and API payloads
-    const AD_KEYS = [
-        'adPlacements', 'adSlots', 'playerAds', 'adBreakHeartbeatParams',
-        'auxiliaryUi', 'promotedSparklesWebRenderer', 'promotedVideoRenderer',
-        'compactPromotedVideoRenderer', 'compactPromotedItemRenderer'
-    ];
-
-    function pruneAds(obj) {
-        if (!obj || typeof obj !== 'object') return obj;
-        for (const k of AD_KEYS) {
-            delete obj[k];
-        }
-        if (obj.playerResponse && typeof obj.playerResponse === 'object') {
-            for (const k of AD_KEYS) {
-                delete obj.playerResponse[k];
-            }
-        }
-        return obj;
-    }
-
-    try {
-        // Hook JSON.parse
-        const origParse = JSON.parse;
-        JSON.parse = function(...args) {
-            const res = origParse.apply(this, args);
-            return pruneAds(res);
-        };
-
-        // Hook initial page player payload
-        let _ytPlayerResponse = undefined;
-        Object.defineProperty(window, 'ytInitialPlayerResponse', {
-            configurable: true,
-            enumerable: true,
-            get() { return _ytPlayerResponse; },
-            set(val) {
-                _ytPlayerResponse = pruneAds(val);
-            }
-        });
-
-        // Hook window.fetch for dynamic SPA navigations (next video, autoplay, playlist)
-        if (window.fetch) {
-            const origFetch = window.fetch;
-            window.fetch = async function(...args) {
-                const response = await origFetch.apply(this, args);
-                try {
-                    const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url) || '';
-                    if (url.includes('/youtubei/v1/player') || url.includes('/youtubei/v1/next')) {
-                        const origJson = response.json;
-                        response.json = async function() {
-                            const data = await origJson.apply(this);
-                            return pruneAds(data);
-                        };
-                    }
-                } catch(e) {}
-                return response;
-            };
-        }
-    } catch(e) {}
-
-    // 2. Runtime fallback: fast-forward without seeking (seeking causes YouTube anti-adblock pause)
+    // Non-destructive runtime fallback: 16x fast-forward without seeking and auto-skip
     let weMuted = false;
     let lastAd = false;
 
