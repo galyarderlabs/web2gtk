@@ -302,13 +302,13 @@ def is_tiktok_app(url_str):
         return False
 
 
-# TikTok feed navigation & performance bridge
+# TikTok feed navigation, unfreeze & performance bridge
 TIKTOK_OPTIMIZATION_SCRIPT = """
 (function() {
     let accumulatedDelta = 0;
     let lastNavTime = 0;
-    const COOLDOWN_MS = 300;
-    const THRESHOLD = 20;
+    const COOLDOWN_MS = 280;
+    const THRESHOLD = 25;
 
     function getNavButtons() {
         const nextBtn = document.querySelector(
@@ -320,41 +320,63 @@ TIKTOK_OPTIMIZATION_SCRIPT = """
         return { nextBtn, prevBtn };
     }
 
-    function dispatchKey(key, keyCode) {
-        const evDown = new KeyboardEvent('keydown', { key: key, code: key, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true });
-        const evUp = new KeyboardEvent('keyup', { key: key, code: key, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true });
-        (document.body || document.documentElement).dispatchEvent(evDown);
-        (document.body || document.documentElement).dispatchEvent(evUp);
+    function unfreezeVideo() {
+        const videos = document.querySelectorAll('video');
+        for (let i = 0; i < videos.length; i++) {
+            const v = videos[i];
+            const rect = v.getBoundingClientRect();
+            // Target the visible video in the viewport
+            if (rect.top >= -200 && rect.bottom <= (window.innerHeight + 200)) {
+                if (v.paused) {
+                    v.play().catch(() => {
+                        v.muted = true;
+                        v.play().catch(() => {});
+                    });
+                }
+                return;
+            }
+        }
     }
+
+    // Auto-unfreeze video on load and user gesture
+    setTimeout(unfreezeVideo, 600);
+    setTimeout(unfreezeVideo, 1800);
+    window.addEventListener('pointerdown', unfreezeVideo, { passive: true });
+    window.addEventListener('click', unfreezeVideo, { passive: true });
 
     function navigate(dir) {
         const now = Date.now();
         if (now - lastNavTime < COOLDOWN_MS) return false;
+
         const { nextBtn, prevBtn } = getNavButtons();
 
         if (dir === 'next') {
-            lastNavTime = now;
             if (nextBtn && typeof nextBtn.click === 'function') {
+                lastNavTime = now;
                 nextBtn.click();
+                setTimeout(unfreezeVideo, 250);
                 return true;
             }
-            dispatchKey('ArrowDown', 40);
-            return true;
         } else if (dir === 'prev') {
-            lastNavTime = now;
             if (prevBtn && typeof prevBtn.click === 'function') {
+                lastNavTime = now;
                 prevBtn.click();
+                setTimeout(unfreezeVideo, 250);
                 return true;
             }
-            dispatchKey('ArrowUp', 38);
-            return true;
         }
         return false;
     }
 
-    // Wheel event bridge for responsive 1-video scrolling
+    // Wheel event bridge for responsive feed video switching
     window.addEventListener('wheel', (e) => {
-        if (e.target && e.target.closest('[data-e2e="comment-list"], [data-e2e="search-box"], textarea, input, [contenteditable="true"]')) {
+        // Never hijack scrolling in inputs, textareas, search boxes, or comments
+        if (e.target && e.target.closest('[data-e2e="comment-list"], [data-e2e="search-box"], [class*="Comment"], textarea, input, [contenteditable="true"]')) {
+            return;
+        }
+
+        // Do not hijack scrolling if a modal or login dialog is open
+        if (document.querySelector('[class*="Modal"], [class*="modal"], [id*="login-modal"], [data-e2e="login-modal"]')) {
             return;
         }
 
@@ -412,7 +434,7 @@ TIKTOK_OPTIMIZATION_SCRIPT = """
                 }
             }
         }
-    }, 800);
+    }, 1000);
 })();
 """
 
@@ -545,11 +567,7 @@ class Web2GtkWindow(Adw.ApplicationWindow):
 
         # Performance & GPU hardware acceleration
         self.settings.set_hardware_acceleration_policy(WebKit.HardwareAccelerationPolicy.ALWAYS)
-        # TikTok feed relies on discrete snap actions; disable smooth scrolling interpolation to prevent micro-delta lag
-        if is_tiktok_app(self.manifest.url):
-            self.settings.set_enable_smooth_scrolling(False)
-        else:
-            self.settings.set_enable_smooth_scrolling(True)
+        self.settings.set_enable_smooth_scrolling(True)
         # Enable 2D canvas acceleration via Skia GPU backend to avoid CPU-GPU texture upload stalls
         self.settings.set_enable_2d_canvas_acceleration(True)
         self.settings.set_enable_webgl(True)
