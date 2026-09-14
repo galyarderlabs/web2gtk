@@ -318,6 +318,126 @@ def is_llm_chat_app(url_str):
         return False
 
 
+def is_tiktok_app(url_str):
+    if not url_str:
+        return False
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(url_str).netloc.lower()
+        return "tiktok.com" in host
+    except Exception:
+        return False
+
+
+# Seamless 1-notch = 1-video wheel snap & video playback sync for TikTok
+TIKTOK_SCROLL_SCRIPT = """
+(function() {
+    let isScrolling = false;
+
+    function getScrollContainer() {
+        return Array.from(document.querySelectorAll('*')).find(el => {
+            const s = window.getComputedStyle(el);
+            return s.scrollSnapType && s.scrollSnapType !== 'none' && (s.overflowY === 'scroll' || s.overflowY === 'auto');
+        }) || document.querySelector('[class*="DivColumnListContainer"], [class*="DivColumn"]') || document.scrollingElement;
+    }
+
+    function syncVideos() {
+        const videos = document.querySelectorAll('video');
+        const vh = window.innerHeight || 800;
+        for (let i = 0; i < videos.length; i++) {
+            const v = videos[i];
+            const rect = v.getBoundingClientRect();
+            const isVisible = (rect.top >= -100 && rect.bottom <= vh + 100 && rect.width > 0 && rect.height > 0);
+            if (isVisible) {
+                if (v.paused) {
+                    v.play().catch(() => {
+                        v.muted = true;
+                        v.play().catch(() => {});
+                    });
+                }
+            } else {
+                if (!v.paused) {
+                    v.pause();
+                }
+            }
+        }
+    }
+
+    setTimeout(syncVideos, 1000);
+    setTimeout(syncVideos, 2500);
+    setInterval(syncVideos, 1200);
+    window.addEventListener('click', syncVideos, { passive: true });
+
+    // Wheel event bridge: 1 wheel notch smoothly advances exactly 1 full video height
+    window.addEventListener('wheel', (e) => {
+        // Never hijack inside comments, modals, inputs, or search
+        if (e.target && e.target.closest('textarea, input, [contenteditable="true"], [data-e2e="comment-list"], [class*="Comment"], [class*="Modal"], [class*="modal"]')) {
+            return;
+        }
+
+        const container = getScrollContainer();
+        if (!container) return;
+
+        if (Math.abs(e.deltaY) < 6) return;
+
+        // Prevent native tiny 30px tick that snaps back to the same video
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (isScrolling) return;
+        isScrolling = true;
+
+        const dir = e.deltaY > 0 ? 1 : -1;
+        const itemHeight = container.clientHeight || window.innerHeight;
+
+        container.scrollBy({
+            top: dir * itemHeight,
+            behavior: 'smooth'
+        });
+
+        setTimeout(syncVideos, 350);
+        setTimeout(syncVideos, 600);
+
+        setTimeout(() => {
+            isScrolling = false;
+        }, 400);
+    }, { passive: false, capture: true });
+
+    // Global keyboard navigation
+    window.addEventListener('keydown', (e) => {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) {
+            return;
+        }
+
+        const container = getScrollContainer();
+        if (!container) return;
+
+        const itemHeight = container.clientHeight || window.innerHeight;
+
+        if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === 'j' || e.key === 's') {
+            e.preventDefault();
+            container.scrollBy({ top: itemHeight, behavior: 'smooth' });
+            setTimeout(syncVideos, 400);
+        } else if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'k' || e.key === 'w') {
+            e.preventDefault();
+            container.scrollBy({ top: -itemHeight, behavior: 'smooth' });
+            setTimeout(syncVideos, 400);
+        } else if (e.key === ' ' || e.code === 'Space') {
+            const v = Array.from(document.querySelectorAll('video')).find(el => {
+                const r = el.getBoundingClientRect();
+                return r.top >= -100 && r.bottom <= window.innerHeight + 100;
+            });
+            if (v) {
+                if (v.paused) v.play().catch(() => {});
+                else v.pause();
+                e.preventDefault();
+            }
+        }
+    }, { capture: true });
+})();
+"""
+
+
 
 
 # Auto-focus the chat input field gently on page load for AI chat apps
@@ -512,6 +632,14 @@ class Web2GtkWindow(Adw.ApplicationWindow):
                 self.on_generation_done
             )
 
+        # TikTok-specific 1-notch feed scroll snap & video playback bridge
+        if is_tiktok_app(self.manifest.url):
+            tiktok_user_script = WebKit.UserScript(
+                source=TIKTOK_SCROLL_SCRIPT,
+                injected_frames=WebKit.UserContentInjectedFrames.ALL_FRAMES,
+                injection_time=WebKit.UserScriptInjectionTime.END
+            )
+            self.user_content_manager.add_script(tiktok_user_script)
 
         # Setup built-in adblocking & YouTube ad-skipping
         if getattr(self.manifest, "adblock", True):
