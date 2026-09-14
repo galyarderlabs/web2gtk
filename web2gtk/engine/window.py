@@ -341,7 +341,7 @@ TIKTOK_SCROLL_SCRIPT = """
         }) || document.querySelector('[class*="DivColumnListContainer"], [class*="DivColumn"]') || document.scrollingElement;
     }
 
-    function syncVideos() {
+    function syncVideos(userNavigated) {
         const videos = document.querySelectorAll('video');
         const vh = window.innerHeight || 800;
         for (let i = 0; i < videos.length; i++) {
@@ -349,24 +349,20 @@ TIKTOK_SCROLL_SCRIPT = """
             const rect = v.getBoundingClientRect();
             const isVisible = (rect.top >= -100 && rect.bottom <= vh + 100 && rect.width > 0 && rect.height > 0);
             if (isVisible) {
-                if (v.paused) {
-                    v.play().catch(() => {
-                        v.muted = true;
-                        v.play().catch(() => {});
-                    });
+                if (userNavigated && v.paused) {
+                    v.play().catch(() => {});
                 }
             } else {
-                if (!v.paused) {
-                    v.pause();
-                }
+                // Ensure all offscreen videos are paused, muted, and silenced
+                if (!v.paused) v.pause();
+                v.muted = true;
+                v.volume = 0;
             }
         }
     }
 
-    setTimeout(syncVideos, 1000);
-    setTimeout(syncVideos, 2500);
-    setInterval(syncVideos, 1200);
-    window.addEventListener('click', syncVideos, { passive: true });
+    // Initial check on load
+    setTimeout(() => syncVideos(false), 800);
 
     // Wheel event bridge: 1 wheel notch smoothly advances exactly 1 full video height
     window.addEventListener('wheel', (e) => {
@@ -395,15 +391,15 @@ TIKTOK_SCROLL_SCRIPT = """
             behavior: 'smooth'
         });
 
-        setTimeout(syncVideos, 350);
-        setTimeout(syncVideos, 600);
+        setTimeout(() => syncVideos(true), 350);
+        setTimeout(() => syncVideos(true), 600);
 
         setTimeout(() => {
             isScrolling = false;
         }, 400);
     }, { passive: false, capture: true });
 
-    // Global keyboard navigation
+    // Global keyboard navigation (ArrowDown / ArrowUp / PageDown / PageUp)
     window.addEventListener('keydown', (e) => {
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) {
             return;
@@ -417,21 +413,11 @@ TIKTOK_SCROLL_SCRIPT = """
         if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === 'j' || e.key === 's') {
             e.preventDefault();
             container.scrollBy({ top: itemHeight, behavior: 'smooth' });
-            setTimeout(syncVideos, 400);
+            setTimeout(() => syncVideos(true), 400);
         } else if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'k' || e.key === 'w') {
             e.preventDefault();
             container.scrollBy({ top: -itemHeight, behavior: 'smooth' });
-            setTimeout(syncVideos, 400);
-        } else if (e.key === ' ' || e.code === 'Space') {
-            const v = Array.from(document.querySelectorAll('video')).find(el => {
-                const r = el.getBoundingClientRect();
-                return r.top >= -100 && r.bottom <= window.innerHeight + 100;
-            });
-            if (v) {
-                if (v.paused) v.play().catch(() => {});
-                else v.pause();
-                e.preventDefault();
-            }
+            setTimeout(() => syncVideos(true), 400);
         }
     }, { capture: true });
 })();
