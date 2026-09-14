@@ -5,8 +5,7 @@ import argparse
 # Hardware video acceleration and VA-API driver configuration
 os.environ.setdefault("LIBVA_DRIVER_NAME", "iHD")
 os.environ.setdefault("GST_VAAPI_ALL_DRIVERS", "1")
-# Disable DMABUF renderer to prevent Wayland Mutter fence sync stalls on Intel Mesa
-os.environ.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+os.environ.setdefault("GST_REGISTRY_FORK", "no")
 
 import gi
 

@@ -20,25 +20,163 @@ except ImportError:
 
 STEALTH_SCRIPT = ""
 
-# Teardown short-lived HTML5 sound effects immediately upon completion
-# Prevents WebKitGTK/GStreamer from leaking dozens of audio pipelines (e.g. Chess move sounds)
+# Bounded VirtualAudio pooler to prevent WebKitGTK/GStreamer pipeline explosion (e.g. Chess move sound packs)
 AUDIO_CLEANUP_SCRIPT = """
 (function() {
     try {
         const OrigAudio = window.Audio;
-        if (typeof OrigAudio === 'function') {
-            window.Audio = function(...args) {
-                const audio = new OrigAudio(...args);
-                audio.addEventListener('ended', function() {
-                    try {
-                        audio.removeAttribute('src');
-                        audio.load();
-                    } catch(e) {}
-                }, { once: true });
-                return audio;
-            };
-            window.Audio.prototype = OrigAudio.prototype;
+        if (typeof OrigAudio !== 'function') return;
+
+        const MAX_PLAYERS = 3;
+        const activePlayers = [];
+
+        function acquirePlayer() {
+            for (let i = 0; i < activePlayers.length; i++) {
+                const p = activePlayers[i];
+                if (!p.__inUse) {
+                    p.__inUse = true;
+                    return p;
+                }
+            }
+            if (activePlayers.length < MAX_PLAYERS) {
+                const p = new OrigAudio();
+                p.__inUse = true;
+                activePlayers.push(p);
+                return p;
+            }
+            const p = activePlayers[0];
+            try { p.pause(); } catch(e) {}
+            return p;
         }
+
+        function releasePlayer(p) {
+            if (!p) return;
+            p.__inUse = false;
+            try {
+                p.pause();
+                p.removeAttribute('src');
+                p.load();
+            } catch(e) {}
+        }
+
+        class VirtualAudio extends EventTarget {
+            constructor(src) {
+                super();
+                this._src = src || '';
+                this._volume = 1.0;
+                this._muted = false;
+                this._playbackRate = 1.0;
+                this._currentTime = 0;
+                this._loop = false;
+                this._paused = true;
+                this._currentPlayer = null;
+            }
+
+            get src() { return this._src; }
+            set src(v) { this._src = String(v || ''); }
+            get currentSrc() { return this._src; }
+
+            get volume() { return this._volume; }
+            set volume(v) {
+                this._volume = Math.max(0, Math.min(1, Number(v) || 0));
+                if (this._currentPlayer) this._currentPlayer.volume = this._volume;
+            }
+
+            get muted() { return this._muted; }
+            set muted(v) {
+                this._muted = Boolean(v);
+                if (this._currentPlayer) this._currentPlayer.muted = this._muted;
+            }
+
+            get playbackRate() { return this._playbackRate; }
+            set playbackRate(v) {
+                this._playbackRate = Number(v) || 1.0;
+                if (this._currentPlayer) this._currentPlayer.playbackRate = this._playbackRate;
+            }
+
+            get currentTime() {
+                if (this._currentPlayer) return this._currentPlayer.currentTime;
+                return this._currentTime;
+            }
+            set currentTime(v) {
+                this._currentTime = Number(v) || 0;
+                if (this._currentPlayer) {
+                    try { this._currentPlayer.currentTime = this._currentTime; } catch(e) {}
+                }
+            }
+
+            get loop() { return this._loop; }
+            set loop(v) { this._loop = Boolean(v); }
+
+            get paused() { return this._paused; }
+            get duration() { return this._currentPlayer ? this._currentPlayer.duration : 0; }
+            get ended() { return this._currentPlayer ? this._currentPlayer.ended : false; }
+            get preload() { return 'none'; }
+            set preload(_) {}
+
+            load() {}
+
+            play() {
+                this._paused = false;
+                if (!this._src) return Promise.resolve();
+
+                if (this._currentPlayer) {
+                    releasePlayer(this._currentPlayer);
+                    this._currentPlayer = null;
+                }
+
+                const player = acquirePlayer();
+                this._currentPlayer = player;
+                player.src = this._src;
+                player.volume = this._muted ? 0 : this._volume;
+                player.playbackRate = this._playbackRate;
+                player.loop = this._loop;
+                if (this._currentTime > 0) {
+                    try { player.currentTime = this._currentTime; } catch(e) {}
+                }
+
+                const onDone = () => {
+                    if (this._currentPlayer === player) {
+                        this._paused = true;
+                        this._currentTime = 0;
+                        releasePlayer(player);
+                        this._currentPlayer = null;
+                    }
+                    this.dispatchEvent(new Event('ended'));
+                };
+
+                player.onended = onDone;
+                player.onerror = onDone;
+
+                this.dispatchEvent(new Event('play'));
+                return player.play().catch(err => {
+                    onDone();
+                    throw err;
+                });
+            }
+
+            pause() {
+                this._paused = true;
+                if (this._currentPlayer) {
+                    this._currentTime = this._currentPlayer.currentTime;
+                    releasePlayer(this._currentPlayer);
+                    this._currentPlayer = null;
+                }
+                this.dispatchEvent(new Event('pause'));
+            }
+
+            cloneNode() {
+                const c = new VirtualAudio(this._src);
+                c.volume = this._volume;
+                c.muted = this._muted;
+                return c;
+            }
+        }
+
+        Object.setPrototypeOf(VirtualAudio.prototype, OrigAudio.prototype);
+        Object.setPrototypeOf(VirtualAudio, OrigAudio);
+        window.Audio = VirtualAudio;
+        VirtualAudio.prototype.constructor = VirtualAudio;
     } catch(e) {}
 })();
 """
@@ -130,8 +268,8 @@ TIKTOK_OPTIMIZATION_SCRIPT = """
 (function() {
     let accumulatedDelta = 0;
     let lastNavTime = 0;
-    const COOLDOWN_MS = 360;
-    const THRESHOLD = 25;
+    const COOLDOWN_MS = 300;
+    const THRESHOLD = 20;
 
     function getNavButtons() {
         const nextBtn = document.querySelector(
@@ -143,24 +281,39 @@ TIKTOK_OPTIMIZATION_SCRIPT = """
         return { nextBtn, prevBtn };
     }
 
+    function dispatchKey(key, keyCode) {
+        const evDown = new KeyboardEvent('keydown', { key: key, code: key, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true });
+        const evUp = new KeyboardEvent('keyup', { key: key, code: key, keyCode: keyCode, which: keyCode, bubbles: true, cancelable: true });
+        (document.body || document.documentElement).dispatchEvent(evDown);
+        (document.body || document.documentElement).dispatchEvent(evUp);
+    }
+
     function navigate(dir) {
         const now = Date.now();
         if (now - lastNavTime < COOLDOWN_MS) return false;
         const { nextBtn, prevBtn } = getNavButtons();
 
-        if (dir === 'next' && nextBtn && typeof nextBtn.click === 'function') {
-            nextBtn.click();
+        if (dir === 'next') {
             lastNavTime = now;
+            if (nextBtn && typeof nextBtn.click === 'function') {
+                nextBtn.click();
+                return true;
+            }
+            dispatchKey('ArrowDown', 40);
             return true;
-        } else if (dir === 'prev' && prevBtn && typeof prevBtn.click === 'function') {
-            prevBtn.click();
+        } else if (dir === 'prev') {
             lastNavTime = now;
+            if (prevBtn && typeof prevBtn.click === 'function') {
+                prevBtn.click();
+                return true;
+            }
+            dispatchKey('ArrowUp', 38);
             return true;
         }
         return false;
     }
 
-    // Wheel event bridge for smooth, responsive 1-video scrolling
+    // Wheel event bridge for responsive 1-video scrolling
     window.addEventListener('wheel', (e) => {
         if (e.target && e.target.closest('[data-e2e="comment-list"], [data-e2e="search-box"], textarea, input, [contenteditable="true"]')) {
             return;
@@ -183,7 +336,7 @@ TIKTOK_OPTIMIZATION_SCRIPT = """
         }
 
         clearTimeout(window.__tt_wheel_timer);
-        window.__tt_wheel_timer = setTimeout(() => { accumulatedDelta = 0; }, 180);
+        window.__tt_wheel_timer = setTimeout(() => { accumulatedDelta = 0; }, 150);
     }, { passive: false, capture: true });
 
     // Global keyboard navigation bridge
@@ -208,16 +361,19 @@ TIKTOK_OPTIMIZATION_SCRIPT = """
         }
     }, { capture: true });
 
-    // Auto-skip sponsored / promotional ad cards in feed
+    // Auto-skip sponsored / promotional ad cards only if currently visible in viewport
     setInterval(() => {
         const adTag = document.querySelector('[data-e2e="ad-tag"], [data-e2e="feed-ad"]');
         if (adTag) {
             const container = adTag.closest('[data-e2e="recommend-list-item-container"], div[class*="DivItemContainer"]');
             if (container) {
-                navigate('next');
+                const rect = container.getBoundingClientRect();
+                if (rect.top >= -100 && rect.bottom <= window.innerHeight + 100) {
+                    navigate('next');
+                }
             }
         }
-    }, 600);
+    }, 800);
 })();
 """
 
