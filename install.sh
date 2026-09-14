@@ -67,19 +67,19 @@ check_dependencies() {
         echo -e "${BOLD}Please install the required system dependencies:${RESET}"
         case "$distro" in
             *arch*|*manjaro*|*endeavouros*)
-                echo -e "  ${CYAN}sudo pacman -S python-gobject gtk4 libadwaita webkitgtk-6.0 libdbusmenu-glib python-pillow python-requests python-beautifulsoup4 librsvg${RESET}"
+                echo -e "  ${CYAN}sudo pacman -S python-gobject gtk4 libadwaita webkitgtk-6.0 libdbusmenu-glib python-pillow python-requests python-beautifulsoup4 librsvg gst-plugin-va intel-media-driver${RESET}"
                 ;;
             *ubuntu*|*debian*|*pop*|*mint*)
-                echo -e "  ${CYAN}sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-webkit-6.0 gir1.2-dbusmenu-glib-0.4 python3-pil python3-requests python3-bs4 librsvg2-bin${RESET}"
+                echo -e "  ${CYAN}sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-webkit-6.0 gir1.2-dbusmenu-glib-0.4 python3-pil python3-requests python3-bs4 librsvg2-bin gstreamer1.0-vaapi${RESET}"
                 ;;
             *fedora*)
-                echo -e "  ${CYAN}sudo dnf install python3-gobject gtk4 libadwaita webkitgtk6.0 libdbusmenu-gtk3 python3-pillow python3-requests python3-beautifulsoup4 librsvg2-tools${RESET}"
+                echo -e "  ${CYAN}sudo dnf install python3-gobject gtk4 libadwaita webkitgtk6.0 libdbusmenu-gtk3 python3-pillow python3-requests python3-beautifulsoup4 librsvg2-tools gstreamer1-vaapi${RESET}"
                 ;;
             *opensuse*|*suse*)
-                echo -e "  ${CYAN}sudo zypper install python3-gobject typelib-Gtk-4_0 typelib-Adw-1 typelib-WebKit-6_0 python3-Pillow python3-requests python3-beautifulsoup4 rsvg-convert${RESET}"
+                echo -e "  ${CYAN}sudo zypper install python3-gobject typelib-Gtk-4_0 typelib-Adw-1 typelib-WebKit-6_0 python3-Pillow python3-requests python3-beautifulsoup4 rsvg-convert gstreamer-plugins-vaapi${RESET}"
                 ;;
             *)
-                echo -e "  ${CYAN}Ensure GTK4, Libadwaita, WebKitGTK-6.0, python-gobject, Pillow, and BeautifulSoup4 are installed.${RESET}"
+                echo -e "  ${CYAN}Ensure GTK4, Libadwaita, WebKitGTK-6.0, python-gobject, Pillow, BeautifulSoup4, and GStreamer VA-API are installed.${RESET}"
                 ;;
         esac
         echo ""

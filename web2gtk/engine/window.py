@@ -98,6 +98,114 @@ def is_llm_chat_app(url_str):
         return False
 
 
+def is_tiktok_app(url_str):
+    if not url_str:
+        return False
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(url_str).netloc.lower()
+        return "tiktok.com" in host
+    except Exception:
+        return False
+
+
+# TikTok feed navigation & performance bridge
+TIKTOK_OPTIMIZATION_SCRIPT = """
+(function() {
+    let accumulatedDelta = 0;
+    let lastNavTime = 0;
+    const COOLDOWN_MS = 360;
+    const THRESHOLD = 25;
+
+    function getNavButtons() {
+        const nextBtn = document.querySelector(
+            'button[data-e2e="feed-navigation-next"], button[data-key-interaction="feed_nav_next"], [data-e2e="arrow-down"], [data-e2e="feed-arrow-down"]'
+        );
+        const prevBtn = document.querySelector(
+            'button[data-e2e="feed-navigation-prev"], button[data-key-interaction="feed_nav_prev"], [data-e2e="arrow-up"], [data-e2e="feed-arrow-up"]'
+        );
+        return { nextBtn, prevBtn };
+    }
+
+    function navigate(dir) {
+        const now = Date.now();
+        if (now - lastNavTime < COOLDOWN_MS) return false;
+        const { nextBtn, prevBtn } = getNavButtons();
+
+        if (dir === 'next' && nextBtn && typeof nextBtn.click === 'function') {
+            nextBtn.click();
+            lastNavTime = now;
+            return true;
+        } else if (dir === 'prev' && prevBtn && typeof prevBtn.click === 'function') {
+            prevBtn.click();
+            lastNavTime = now;
+            return true;
+        }
+        return false;
+    }
+
+    // Wheel event bridge for smooth, responsive 1-video scrolling
+    window.addEventListener('wheel', (e) => {
+        if (e.target && e.target.closest('[data-e2e="comment-list"], [data-e2e="search-box"], textarea, input, [contenteditable="true"]')) {
+            return;
+        }
+
+        accumulatedDelta += e.deltaY;
+
+        if (accumulatedDelta >= THRESHOLD) {
+            accumulatedDelta = 0;
+            if (navigate('next')) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        } else if (accumulatedDelta <= -THRESHOLD) {
+            accumulatedDelta = 0;
+            if (navigate('prev')) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }
+
+        clearTimeout(window.__tt_wheel_timer);
+        window.__tt_wheel_timer = setTimeout(() => { accumulatedDelta = 0; }, 180);
+    }, { passive: false, capture: true });
+
+    // Global keyboard navigation bridge
+    window.addEventListener('keydown', (e) => {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) {
+            return;
+        }
+        if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === 'j' || e.key === 's') {
+            if (navigate('next')) e.preventDefault();
+        } else if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'k' || e.key === 'w') {
+            if (navigate('prev')) e.preventDefault();
+        } else if (e.key === ' ' || e.code === 'Space') {
+            const v = document.querySelector('video');
+            if (v) {
+                if (v.paused) v.play().catch(() => {});
+                else v.pause();
+                e.preventDefault();
+            }
+        } else if (e.key === 'm' || e.key === 'M') {
+            const muteBtn = document.querySelector('[data-e2e="video-sound"]');
+            if (muteBtn && typeof muteBtn.click === 'function') muteBtn.click();
+        }
+    }, { capture: true });
+
+    // Auto-skip sponsored / promotional ad cards in feed
+    setInterval(() => {
+        const adTag = document.querySelector('[data-e2e="ad-tag"], [data-e2e="feed-ad"]');
+        if (adTag) {
+            const container = adTag.closest('[data-e2e="recommend-list-item-container"], div[class*="DivItemContainer"]');
+            if (container) {
+                navigate('next');
+            }
+        }
+    }, 600);
+})();
+"""
+
+
 # Auto-focus the chat input field gently on page load for AI chat apps
 FOCUS_SCRIPT = """
 (function() {
@@ -226,7 +334,11 @@ class Web2GtkWindow(Adw.ApplicationWindow):
 
         # Performance & GPU hardware acceleration
         self.settings.set_hardware_acceleration_policy(WebKit.HardwareAccelerationPolicy.ALWAYS)
-        self.settings.set_enable_smooth_scrolling(True)
+        # TikTok feed relies on discrete snap actions; disable smooth scrolling interpolation to prevent micro-delta lag
+        if is_tiktok_app(self.manifest.url):
+            self.settings.set_enable_smooth_scrolling(False)
+        else:
+            self.settings.set_enable_smooth_scrolling(True)
         self.settings.set_enable_2d_canvas_acceleration(True)
         self.settings.set_enable_webgl(True)
         self.settings.set_enable_media(True)
@@ -265,6 +377,15 @@ class Web2GtkWindow(Adw.ApplicationWindow):
                 "script-message-received::generation_done",
                 self.on_generation_done
             )
+
+        # TikTok-specific feed scrolling & navigation bridge
+        if is_tiktok_app(self.manifest.url):
+            tiktok_user_script = WebKit.UserScript(
+                source=TIKTOK_OPTIMIZATION_SCRIPT,
+                injected_frames=WebKit.UserContentInjectedFrames.ALL_FRAMES,
+                injection_time=WebKit.UserScriptInjectionTime.END
+            )
+            self.user_content_manager.add_script(tiktok_user_script)
 
         # Setup built-in adblocking & YouTube ad-skipping
         if getattr(self.manifest, "adblock", True):

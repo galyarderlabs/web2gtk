@@ -1,6 +1,12 @@
 import os
 import sys
 import argparse
+
+# Hardware video acceleration and VA-API driver configuration
+os.environ.setdefault("LIBVA_DRIVER_NAME", "iHD")
+os.environ.setdefault("GST_VAAPI_ALL_DRIVERS", "1")
+os.environ.setdefault("WEBKIT_FORCE_COMPOSITING_MODE", "1")
+
 import gi
 
 gi.require_version('Gtk', '4.0')
@@ -11,6 +17,7 @@ gi.require_version('Gdk', '4.0')
 gi.require_version('Gio', '2.0')
 
 from gi.repository import Adw, Gio, Gdk, WebKit
+from web2gtk import __version__
 from web2gtk.manifest import AppManifest
 from web2gtk.engine.window import Web2GtkWindow
 from web2gtk.engine.tray import StatusNotifierTray
@@ -88,7 +95,7 @@ class Web2GtkApp(Adw.Application):
             application_name=self.manifest.name,
             application_icon=self.manifest.icon,
             developer_name="Galyarder Labs",
-            version="0.1.0",
+            version=__version__,
             copyright="© 2026 Galyarder Labs",
             comments=f"Lightweight native GTK4/Libadwaita desktop wrapper for {self.manifest.url}",
             website=self.manifest.url,
