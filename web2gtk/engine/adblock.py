@@ -28,6 +28,10 @@ COMMON_AD_RULES = [
     {"trigger": {"url-filter": r".*pubmatic\.com/.*"}, "action": {"type": "block"}},
     {"trigger": {"url-filter": r".*rubiconproject\.com/.*"}, "action": {"type": "block"}},
     {"trigger": {"url-filter": r".*adservice\.google\..*"}, "action": {"type": "block"}},
+    {"trigger": {"url-filter": r".*youtube\.com/pagead/.*"}, "action": {"type": "block"}},
+    {"trigger": {"url-filter": r".*youtube\.com/api/stats/ads.*"}, "action": {"type": "block"}},
+    {"trigger": {"url-filter": r".*youtube\.com/ptracking.*"}, "action": {"type": "block"}},
+    {"trigger": {"url-filter": r".*youtube\.com/youtubei/v1/player/ad_break.*"}, "action": {"type": "block"}},
 ]
 
 # YouTube-specific cosmetic ad hiding CSS
@@ -48,28 +52,66 @@ ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"] {
 }
 """
 
-# Dynamic high-speed YouTube ad skipper script with seamless playback restoration
+# Dynamic high-speed YouTube ad stripper & non-destructive fast-forward script
 YOUTUBE_ADBLOCK_SCRIPT = """
 (function() {
-    let wasAd = false;
+    // 1. Prune ad placements from initial player response and API payloads before player loads
+    function pruneAds(obj) {
+        if (!obj || typeof obj !== 'object') return obj;
+        delete obj.adPlacements;
+        delete obj.adSlots;
+        delete obj.playerAds;
+        delete obj.adBreakHeartbeatParams;
+        if (obj.playerResponse && typeof obj.playerResponse === 'object') {
+            delete obj.playerResponse.adPlacements;
+            delete obj.playerResponse.adSlots;
+            delete obj.playerResponse.playerAds;
+        }
+        return obj;
+    }
+
+    try {
+        const origParse = JSON.parse;
+        JSON.parse = function(...args) {
+            const res = origParse.apply(this, args);
+            return pruneAds(res);
+        };
+
+        let _ytPlayerResponse = undefined;
+        Object.defineProperty(window, 'ytInitialPlayerResponse', {
+            configurable: true,
+            enumerable: true,
+            get() { return _ytPlayerResponse; },
+            set(val) {
+                _ytPlayerResponse = pruneAds(val);
+            }
+        });
+    } catch(e) {}
+
+    // 2. Runtime fallback: fast-forward without seeking (seeking causes YouTube anti-adblock pause)
+    let weMuted = false;
+    let lastAd = false;
 
     function handleAds() {
         const player = document.querySelector('#movie_player, .html5-video-player');
-        const video = document.querySelector('#movie_player video, video');
+        const video = document.querySelector('#movie_player video, video.html5-main-video, video');
         if (!player || !video) return;
 
         const isAd = player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
 
         if (isAd) {
-            wasAd = true;
-            video.muted = true;
-            // Fast forward without reaching full duration to avoid triggering HTML5 'ended' pause
-            if (isFinite(video.duration) && video.duration > 0.5) {
-                video.currentTime = video.duration - 0.2;
+            lastAd = true;
+            // Mute during ad
+            if (!video.muted) {
+                video.muted = true;
+                weMuted = true;
             }
-            video.playbackRate = 16.0;
+            // Accelerate without seeking (YouTube rejects seek but allows high playback rate)
+            if (video.playbackRate < 16.0) {
+                video.playbackRate = 16.0;
+            }
 
-            // Auto-click any skip button if present
+            // Immediately click any skip button if available
             const skipButtons = document.querySelectorAll(
                 '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-slot button, button.ytp-ad-skip-button'
             );
@@ -79,14 +121,17 @@ YOUTUBE_ADBLOCK_SCRIPT = """
                 }
             }
 
-            // Force play if paused during ad
+            // If YouTube paused the video, resume playback automatically
             if (video.paused) {
                 video.play().catch(() => {});
             }
-        } else if (wasAd) {
-            // Ad completed: restore normal audio and playback instantly
-            wasAd = false;
-            video.muted = false;
+        } else if (lastAd) {
+            // Ad ended: restore audio and normal speed immediately
+            lastAd = false;
+            if (weMuted) {
+                video.muted = false;
+                weMuted = false;
+            }
             video.playbackRate = 1.0;
             if (video.paused) {
                 video.play().catch(() => {});
@@ -100,8 +145,7 @@ YOUTUBE_ADBLOCK_SCRIPT = """
         }
     }
 
-    // Lightweight interval without expensive DOM subtree MutationObserver
-    setInterval(handleAds, 200);
+    setInterval(handleAds, 150);
 })();
 """
 
