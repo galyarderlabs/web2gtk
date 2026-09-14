@@ -27,15 +27,15 @@ Most web-to-desktop app generators (like Nativefier or Pake) bundle entire Chrom
 | **Styling & Theming** | Web / Custom frame | Generic webview wrapper | **100% Native Libadwaita** |
 | **System Tray** | XEmbed / AppIndicator | Webview Tray | **Pure D-Bus StatusNotifierItem (SNI)** |
 | **Session Persistence** | Chrome Profile | SQLite / Webview | **Isolated SQLite Cookies & Storage** |
-| **Anti-Bot / Cloudflare** | Often flagged | May break 2FA | **Safari 18 macOS + Stealth engine** |
+| **Anti-Bot / Cloudflare** | Often flagged | May break 2FA | **Clean Linux WebKit (authentic fingerprint)** |
 
 ---
 
 ## Key Features
 
 - **Persistent Auth Across Reboots:** Session tokens and cookies persist cleanly in SQLite (`cookies.sqlite`). No surprise logouts after rebooting.
-- **Cloudflare & Bot-Detection Bypass:** WebKit engine configured with Safari macOS User-Agent, `navigator.webdriver = false` stealth injection, and disabled ITP.
-- **D-Bus System Tray:** Built on the `org.kde.StatusNotifierItem` protocol. Closing (X) hides the window to the system tray, with dynamic attention status (`NeedsAttention`) when background tasks finish.
+- **Cloudflare & Bot-Detection Friendly:** Pure, untampered Linux WebKit engine with authentic platform fingerprint (eliminating fake stealth red flags) and disabled ITP for reliable login sessions.
+- **D-Bus System Tray Support:** Built on the `org.kde.StatusNotifierItem` protocol. Optional tray minimization via menu with dynamic attention status (`NeedsAttention`) when background tasks finish.
 - **Automatic Icon Scraper:** Automatically discovers high-res icons (`apple-touch-icon`, web app manifests, or SVGs) from target URLs and formats them into standard 32x32, 128x128, and 256x256 PNGs.
 - **Full Media & Hardware Permissions:** Supports WebRTC microphone and camera (voice chat in ChatGPT, Google Meet, etc.) and desktop notifications.
 - **OAuth Popup Friendly:** Popup authentication flows (Google, Apple, Microsoft, GitHub) open seamlessly in dedicated transient windows without breaking the parent session.
