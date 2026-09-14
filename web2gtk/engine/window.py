@@ -20,6 +20,29 @@ except ImportError:
 
 STEALTH_SCRIPT = ""
 
+# Teardown short-lived HTML5 sound effects immediately upon completion
+# Prevents WebKitGTK/GStreamer from leaking dozens of audio pipelines (e.g. Chess move sounds)
+AUDIO_CLEANUP_SCRIPT = """
+(function() {
+    try {
+        const OrigAudio = window.Audio;
+        if (typeof OrigAudio === 'function') {
+            window.Audio = function(...args) {
+                const audio = new OrigAudio(...args);
+                audio.addEventListener('ended', function() {
+                    try {
+                        audio.removeAttribute('src');
+                        audio.load();
+                    } catch(e) {}
+                }, { once: true });
+                return audio;
+            };
+            window.Audio.prototype = OrigAudio.prototype;
+        }
+    } catch(e) {}
+})();
+"""
+
 AUTH_DOMAINS = (
     "accounts.google.com",
     "appleid.apple.com",
@@ -343,6 +366,15 @@ class Web2GtkWindow(Adw.ApplicationWindow):
 
         # User Content Manager
         self.user_content_manager = WebKit.UserContentManager()
+
+        # Ensure HTML5 sound effects (e.g. Chess move sounds) clean up their GStreamer pipelines immediately
+        audio_cleanup_script = WebKit.UserScript(
+            source=AUDIO_CLEANUP_SCRIPT,
+            injected_frames=WebKit.UserContentInjectedFrames.ALL_FRAMES,
+            injection_time=WebKit.UserScriptInjectionTime.START
+        )
+        self.user_content_manager.add_script(audio_cleanup_script)
+
         if self.manifest.stealth and STEALTH_SCRIPT:
             stealth_script = WebKit.UserScript(
                 source=STEALTH_SCRIPT,
