@@ -8,8 +8,8 @@ CONFIG_BASE = os.path.expanduser("~/.config/web2gtk")
 APPS_DIR = os.path.join(CONFIG_BASE, "apps")
 
 DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 "
-    "(KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 )
 
 
@@ -47,6 +47,10 @@ class AppManifest:
 
         if not self.icon:
             self.icon = self.slug
+
+        # Auto-migrate legacy Safari UA strings to modern Chrome Linux UA
+        if not self.user_agent or "Version/18.0 Safari" in self.user_agent or "Version/60.5 Safari" in self.user_agent:
+            self.user_agent = DEFAULT_USER_AGENT
 
     @property
     def data_dir(self) -> str:

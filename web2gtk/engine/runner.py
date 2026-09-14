@@ -8,11 +8,11 @@ os.environ.setdefault("GST_VAAPI_ALL_DRIVERS", "1")
 os.environ.setdefault("GST_REGISTRY_FORK", "no")
 
 # Reset process niceness if inherited from high-priority parent (e.g. gnome-shell at -12)
-# Ensures GNOME Shell compositor (-12) and desktop have complete preemption priority over WebKit
+# Ensures web apps run at normal unthrottled desktop priority (nice 0) without inheriting compositor priority
 try:
     current_nice = os.nice(0)
-    if current_nice < 5:
-        os.nice(5 - current_nice)
+    if current_nice < 0:
+        os.nice(0 - current_nice)
 except Exception:
     pass
 

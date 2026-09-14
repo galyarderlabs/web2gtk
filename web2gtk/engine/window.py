@@ -195,6 +195,13 @@ AUDIO_CLEANUP_SCRIPT = """
                 this.dispatchEvent(new Event('pause'));
             }
 
+            canPlayType(type) {
+                const p = acquirePlayer();
+                const res = p.canPlayType ? p.canPlayType(type) : '';
+                releasePlayer(p);
+                return res;
+            }
+
             cloneNode() {
                 const c = new VirtualAudio(this._src);
                 c.volume = this._volume;
@@ -207,15 +214,6 @@ AUDIO_CLEANUP_SCRIPT = """
         Object.setPrototypeOf(VirtualAudio, OrigAudio);
         window.Audio = VirtualAudio;
         VirtualAudio.prototype.constructor = VirtualAudio;
-
-        // Route document.createElement('audio') to VirtualAudio to eliminate dormant GStreamer pipelines
-        const origCreateElement = document.createElement;
-        document.createElement = function(tagName, ...args) {
-            if (typeof tagName === 'string' && tagName.toLowerCase() === 'audio') {
-                return new window.Audio();
-            }
-            return origCreateElement.call(this, tagName, ...args);
-        };
     } catch(e) {}
 })();
 """
@@ -229,6 +227,20 @@ AUTH_DOMAINS = (
     "auth0.com",
     "clerk.com",
     "okta.com",
+    "facebook.com",
+    "meta.com",
+    "instagram.com",
+    "threads.net",
+    "threads.com",
+    "auth.meta.com",
+    "accountscenter.instagram.com",
+    "accountscenter.meta.com",
+    "accountscenter.facebook.com",
+)
+
+APP_FAMILIES = (
+    ("threads.net", "threads.com", "instagram.com", "facebook.com", "meta.com", "fb.com", "cdninstagram.com", "fbcdn.net"),
+    ("google.com", "youtube.com", "googleusercontent.com", "gstatic.com", "googleapis.com"),
 )
 
 
@@ -242,7 +254,7 @@ def is_auth_url(url_str):
         if any(ad in host for ad in AUTH_DOMAINS):
             return True
         path = p.path.lower()
-        if any(kw in path for kw in ("/auth/", "/login", "/signin", "/oauth", "/sso")):
+        if any(kw in path for kw in ("/auth/", "/login", "/signin", "/oauth", "/sso", "/challenge")):
             return True
     except Exception:
         pass
@@ -258,6 +270,10 @@ def is_same_app_domain(url_str, app_url):
         app_host = urlparse(app_url).netloc.lower()
         if target_host == app_host or target_host.endswith("." + app_host):
             return True
+        # Check app families (e.g. Threads <-> Instagram <-> Meta)
+        for family in APP_FAMILIES:
+            if any(f in app_host for f in family) and any(f in target_host for f in family):
+                return True
         if "notebook" in app_host and "notebook" in target_host and target_host.endswith(".google.com"):
             return True
         parts_target = target_host.split(".")
@@ -270,6 +286,17 @@ def is_same_app_domain(url_str, app_url):
     except Exception:
         pass
     return False
+
+
+def is_chess_app(url_str):
+    if not url_str:
+        return False
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(url_str).netloc.lower()
+        return "chess.com" in host or "lichess.org" in host
+    except Exception:
+        return False
 
 
 LLM_CHAT_DOMAINS = (
@@ -307,8 +334,8 @@ TIKTOK_OPTIMIZATION_SCRIPT = """
 (function() {
     let accumulatedDelta = 0;
     let lastNavTime = 0;
-    const COOLDOWN_MS = 280;
-    const THRESHOLD = 25;
+    const COOLDOWN_MS = 500;
+    const THRESHOLD = 60;
 
     function getNavButtons() {
         const nextBtn = document.querySelector(
@@ -320,29 +347,50 @@ TIKTOK_OPTIMIZATION_SCRIPT = """
         return { nextBtn, prevBtn };
     }
 
-    function unfreezeVideo() {
+    function manageVideos() {
         const videos = document.querySelectorAll('video');
+        const vh = window.innerHeight || 800;
+        let foundVisible = false;
+
         for (let i = 0; i < videos.length; i++) {
             const v = videos[i];
             const rect = v.getBoundingClientRect();
-            // Target the visible video in the viewport
-            if (rect.top >= -200 && rect.bottom <= (window.innerHeight + 200)) {
+            // Visible in viewport check
+            const isVisible = (rect.top >= -150 && rect.bottom <= vh + 150 && rect.width > 0 && rect.height > 0);
+
+            if (isVisible && !foundVisible) {
+                foundVisible = true;
                 if (v.paused) {
                     v.play().catch(() => {
                         v.muted = true;
                         v.play().catch(() => {});
                     });
                 }
-                return;
+            } else {
+                // Off-screen video: MUST PAUSE IMMEDIATELY to eliminate concurrent GStreamer VA-API decoding
+                if (!v.paused) {
+                    v.pause();
+                }
+                // Far off-screen (more than 2 screens away): unload pipeline completely to reclaim system RAM
+                if (rect.bottom < -vh * 2 || rect.top > vh * 3) {
+                    if (v.src || v.currentSrc) {
+                        try {
+                            v.pause();
+                            v.removeAttribute('src');
+                            v.load();
+                        } catch(e) {}
+                    }
+                }
             }
         }
     }
 
-    // Auto-unfreeze video on load and user gesture
-    setTimeout(unfreezeVideo, 600);
-    setTimeout(unfreezeVideo, 1800);
-    window.addEventListener('pointerdown', unfreezeVideo, { passive: true });
-    window.addEventListener('click', unfreezeVideo, { passive: true });
+    // Auto-manage videos on load, gestures, and background interval
+    setTimeout(manageVideos, 600);
+    setTimeout(manageVideos, 1800);
+    setInterval(manageVideos, 1500);
+    window.addEventListener('pointerdown', manageVideos, { passive: true });
+    window.addEventListener('click', manageVideos, { passive: true });
 
     function navigate(dir) {
         const now = Date.now();
@@ -354,14 +402,14 @@ TIKTOK_OPTIMIZATION_SCRIPT = """
             if (nextBtn && typeof nextBtn.click === 'function') {
                 lastNavTime = now;
                 nextBtn.click();
-                setTimeout(unfreezeVideo, 250);
+                setTimeout(manageVideos, 250);
                 return true;
             }
         } else if (dir === 'prev') {
             if (prevBtn && typeof prevBtn.click === 'function') {
                 lastNavTime = now;
                 prevBtn.click();
-                setTimeout(unfreezeVideo, 250);
+                setTimeout(manageVideos, 250);
                 return true;
             }
         }
@@ -570,6 +618,9 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         self.settings.set_enable_smooth_scrolling(True)
         # Enable 2D canvas acceleration via Skia GPU backend to avoid CPU-GPU texture upload stalls
         self.settings.set_enable_2d_canvas_acceleration(True)
+        self.settings.set_enable_dns_prefetching(True)
+        self.settings.set_enable_page_cache(False)
+        self.settings.set_enable_back_forward_navigation_gestures(True)
         self.settings.set_enable_webgl(True)
         self.settings.set_enable_media(True)
         self.settings.set_enable_mediasource(True)
@@ -577,16 +628,28 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         self.settings.set_media_playback_allows_inline(True)
         self.settings.set_media_playback_requires_user_gesture(False)
 
+        # Proactive memory management: purge media buffers and JS heaps before system OOM
+        try:
+            mps = WebKit.MemoryPressureSettings()
+            mps.set_memory_limit(2048)
+            mps.set_poll_interval(2.0)
+            mps.set_conservative_threshold(0.45)
+            mps.set_strict_threshold(0.75)
+            WebKit.NetworkSession.set_memory_pressure_settings(mps)
+        except Exception:
+            pass
+
         # User Content Manager
         self.user_content_manager = WebKit.UserContentManager()
 
-        # Ensure HTML5 sound effects (e.g. Chess move sounds) clean up their GStreamer pipelines immediately
-        audio_cleanup_script = WebKit.UserScript(
-            source=AUDIO_CLEANUP_SCRIPT,
-            injected_frames=WebKit.UserContentInjectedFrames.ALL_FRAMES,
-            injection_time=WebKit.UserScriptInjectionTime.START
-        )
-        self.user_content_manager.add_script(audio_cleanup_script)
+        # Ensure HTML5 sound effects in chess apps clean up their GStreamer pipelines immediately
+        if is_chess_app(self.manifest.url):
+            audio_cleanup_script = WebKit.UserScript(
+                source=AUDIO_CLEANUP_SCRIPT,
+                injected_frames=WebKit.UserContentInjectedFrames.ALL_FRAMES,
+                injection_time=WebKit.UserScriptInjectionTime.START
+            )
+            self.user_content_manager.add_script(audio_cleanup_script)
 
         if self.manifest.stealth and STEALTH_SCRIPT:
             stealth_script = WebKit.UserScript(
