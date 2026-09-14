@@ -1055,7 +1055,7 @@ class Web2GtkWindow(Adw.ApplicationWindow):
 
     def on_close_request(self, _):
         self.save_window_state()
-        if getattr(self.manifest, "close_to_tray", False):
+        if self.manifest.system_tray:
             self.set_visible(False)
             return True
         self.app.quit()
