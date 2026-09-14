@@ -47,7 +47,9 @@ ytd-banner-promo-renderer,
 .video-ads,
 .ytp-ad-module,
 ytd-in-feed-ad-layout-renderer,
-ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"] {
+ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"],
+ytd-enforcement-message-view-model,
+tp-yt-iron-overlay-backdrop[opened] {
     display: none !important;
 }
 """
@@ -71,12 +73,14 @@ YOUTUBE_ADBLOCK_SCRIPT = """
     }
 
     try {
+        // Hook JSON.parse
         const origParse = JSON.parse;
         JSON.parse = function(...args) {
             const res = origParse.apply(this, args);
             return pruneAds(res);
         };
 
+        // Hook initial page player payload
         let _ytPlayerResponse = undefined;
         Object.defineProperty(window, 'ytInitialPlayerResponse', {
             configurable: true,
@@ -86,6 +90,25 @@ YOUTUBE_ADBLOCK_SCRIPT = """
                 _ytPlayerResponse = pruneAds(val);
             }
         });
+
+        // Hook window.fetch for dynamic SPA navigations (clicking next video, autoplay)
+        if (window.fetch) {
+            const origFetch = window.fetch;
+            window.fetch = async function(...args) {
+                const response = await origFetch.apply(this, args);
+                try {
+                    const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url) || '';
+                    if (url.includes('/youtubei/v1/player')) {
+                        const origJson = response.json;
+                        response.json = async function() {
+                            const data = await origJson.apply(this);
+                            return pruneAds(data);
+                        };
+                    }
+                } catch(e) {}
+                return response;
+            };
+        }
     } catch(e) {}
 
     // 2. Runtime fallback: fast-forward without seeking (seeking causes YouTube anti-adblock pause)
@@ -138,7 +161,15 @@ YOUTUBE_ADBLOCK_SCRIPT = """
             }
         }
 
-        // Dismiss interstitial modal overlays
+        // Dismiss anti-adblock modal or interstitial dialogs
+        const enforcement = document.querySelector('ytd-enforcement-message-view-model');
+        if (enforcement) {
+            enforcement.remove();
+            const backdrop = document.querySelector('tp-yt-iron-overlay-backdrop');
+            if (backdrop) backdrop.remove();
+            if (video && video.paused) video.play().catch(() => {});
+        }
+
         const dismissBtn = document.querySelector('tp-yt-paper-dialog #dismiss-button, #dismiss-button');
         if (dismissBtn && typeof dismissBtn.click === 'function') {
             dismissBtn.click();
