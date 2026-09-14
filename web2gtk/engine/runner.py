@@ -5,7 +5,6 @@ import argparse
 # Hardware video acceleration and VA-API driver configuration
 os.environ.setdefault("LIBVA_DRIVER_NAME", "iHD")
 os.environ.setdefault("GST_VAAPI_ALL_DRIVERS", "1")
-os.environ.setdefault("WEBKIT_FORCE_COMPOSITING_MODE", "1")
 
 import gi
 

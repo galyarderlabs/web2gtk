@@ -339,7 +339,8 @@ class Web2GtkWindow(Adw.ApplicationWindow):
             self.settings.set_enable_smooth_scrolling(False)
         else:
             self.settings.set_enable_smooth_scrolling(True)
-        self.settings.set_enable_2d_canvas_acceleration(True)
+        # Disable experimental 2D canvas acceleration on Linux to prevent GPU sync stalls on canvas web apps (Chess.com, etc.)
+        self.settings.set_enable_2d_canvas_acceleration(False)
         self.settings.set_enable_webgl(True)
         self.settings.set_enable_media(True)
         self.settings.set_enable_mediasource(True)
@@ -834,7 +835,8 @@ class Web2GtkWindow(Adw.ApplicationWindow):
 
     def on_close_request(self, _):
         self.save_window_state()
-        if self.manifest.system_tray:
+        if getattr(self.manifest, "close_to_tray", False):
             self.set_visible(False)
             return True
+        self.app.quit()
         return False
