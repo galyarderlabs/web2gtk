@@ -18,14 +18,7 @@ try:
 except ImportError:
     from adblock import setup_adblock
 
-STEALTH_SCRIPT = """
-try {
-    Object.defineProperty(navigator, 'webdriver', {
-        get: () => false,
-        configurable: true
-    });
-} catch(e) {}
-"""
+STEALTH_SCRIPT = ""
 
 AUTH_DOMAINS = (
     "accounts.google.com",
@@ -350,7 +343,7 @@ class Web2GtkWindow(Adw.ApplicationWindow):
 
         # User Content Manager
         self.user_content_manager = WebKit.UserContentManager()
-        if self.manifest.stealth:
+        if self.manifest.stealth and STEALTH_SCRIPT:
             stealth_script = WebKit.UserScript(
                 source=STEALTH_SCRIPT,
                 injected_frames=WebKit.UserContentInjectedFrames.ALL_FRAMES,

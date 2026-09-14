@@ -8,8 +8,8 @@ CONFIG_BASE = os.path.expanduser("~/.config/web2gtk")
 APPS_DIR = os.path.join(CONFIG_BASE, "apps")
 
 DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
-    "(KHTML, like Gecko) Version/18.3 Safari/605.1.15"
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 )
 
 
@@ -29,7 +29,7 @@ class AppManifest:
     app_id: str = ""
     icon: str = ""
     user_agent: str = DEFAULT_USER_AGENT
-    stealth: bool = True
+    stealth: bool = False
     persistent_storage: bool = True
     system_tray: bool = True
     adblock: bool = True
