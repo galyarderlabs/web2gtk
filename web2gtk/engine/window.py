@@ -318,173 +318,6 @@ def is_llm_chat_app(url_str):
         return False
 
 
-def is_tiktok_app(url_str):
-    if not url_str:
-        return False
-    try:
-        from urllib.parse import urlparse
-        host = urlparse(url_str).netloc.lower()
-        return "tiktok.com" in host
-    except Exception:
-        return False
-
-
-# TikTok feed navigation, unfreeze & performance bridge
-TIKTOK_OPTIMIZATION_SCRIPT = """
-(function() {
-    let accumulatedDelta = 0;
-    let lastNavTime = 0;
-    const COOLDOWN_MS = 500;
-    const THRESHOLD = 60;
-
-    function getNavButtons() {
-        const nextBtn = document.querySelector(
-            'button[data-e2e="feed-navigation-next"], button[data-key-interaction="feed_nav_next"], [data-e2e="arrow-down"], [data-e2e="feed-arrow-down"]'
-        );
-        const prevBtn = document.querySelector(
-            'button[data-e2e="feed-navigation-prev"], button[data-key-interaction="feed_nav_prev"], [data-e2e="arrow-up"], [data-e2e="feed-arrow-up"]'
-        );
-        return { nextBtn, prevBtn };
-    }
-
-    function manageVideos() {
-        const videos = document.querySelectorAll('video');
-        const vh = window.innerHeight || 800;
-        let foundVisible = false;
-
-        for (let i = 0; i < videos.length; i++) {
-            const v = videos[i];
-            const rect = v.getBoundingClientRect();
-            // Visible in viewport check
-            const isVisible = (rect.top >= -150 && rect.bottom <= vh + 150 && rect.width > 0 && rect.height > 0);
-
-            if (isVisible && !foundVisible) {
-                foundVisible = true;
-                if (v.paused) {
-                    v.play().catch(() => {
-                        v.muted = true;
-                        v.play().catch(() => {});
-                    });
-                }
-            } else {
-                // Off-screen video: MUST PAUSE IMMEDIATELY to eliminate concurrent GStreamer VA-API decoding
-                if (!v.paused) {
-                    v.pause();
-                }
-                // Far off-screen (more than 2 screens away): unload pipeline completely to reclaim system RAM
-                if (rect.bottom < -vh * 2 || rect.top > vh * 3) {
-                    if (v.src || v.currentSrc) {
-                        try {
-                            v.pause();
-                            v.removeAttribute('src');
-                            v.load();
-                        } catch(e) {}
-                    }
-                }
-            }
-        }
-    }
-
-    // Auto-manage videos on load, gestures, and background interval
-    setTimeout(manageVideos, 600);
-    setTimeout(manageVideos, 1800);
-    setInterval(manageVideos, 1500);
-    window.addEventListener('pointerdown', manageVideos, { passive: true });
-    window.addEventListener('click', manageVideos, { passive: true });
-
-    function navigate(dir) {
-        const now = Date.now();
-        if (now - lastNavTime < COOLDOWN_MS) return false;
-
-        const { nextBtn, prevBtn } = getNavButtons();
-
-        if (dir === 'next') {
-            if (nextBtn && typeof nextBtn.click === 'function') {
-                lastNavTime = now;
-                nextBtn.click();
-                setTimeout(manageVideos, 250);
-                return true;
-            }
-        } else if (dir === 'prev') {
-            if (prevBtn && typeof prevBtn.click === 'function') {
-                lastNavTime = now;
-                prevBtn.click();
-                setTimeout(manageVideos, 250);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    // Wheel event bridge for responsive feed video switching
-    window.addEventListener('wheel', (e) => {
-        // Never hijack scrolling in inputs, textareas, search boxes, or comments
-        if (e.target && e.target.closest('[data-e2e="comment-list"], [data-e2e="search-box"], [class*="Comment"], textarea, input, [contenteditable="true"]')) {
-            return;
-        }
-
-        // Do not hijack scrolling if a modal or login dialog is open
-        if (document.querySelector('[class*="Modal"], [class*="modal"], [id*="login-modal"], [data-e2e="login-modal"]')) {
-            return;
-        }
-
-        accumulatedDelta += e.deltaY;
-
-        if (accumulatedDelta >= THRESHOLD) {
-            accumulatedDelta = 0;
-            if (navigate('next')) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-        } else if (accumulatedDelta <= -THRESHOLD) {
-            accumulatedDelta = 0;
-            if (navigate('prev')) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-        }
-
-        clearTimeout(window.__tt_wheel_timer);
-        window.__tt_wheel_timer = setTimeout(() => { accumulatedDelta = 0; }, 150);
-    }, { passive: false, capture: true });
-
-    // Global keyboard navigation bridge
-    window.addEventListener('keydown', (e) => {
-        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) {
-            return;
-        }
-        if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === 'j' || e.key === 's') {
-            if (navigate('next')) e.preventDefault();
-        } else if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'k' || e.key === 'w') {
-            if (navigate('prev')) e.preventDefault();
-        } else if (e.key === ' ' || e.code === 'Space') {
-            const v = document.querySelector('video');
-            if (v) {
-                if (v.paused) v.play().catch(() => {});
-                else v.pause();
-                e.preventDefault();
-            }
-        } else if (e.key === 'm' || e.key === 'M') {
-            const muteBtn = document.querySelector('[data-e2e="video-sound"]');
-            if (muteBtn && typeof muteBtn.click === 'function') muteBtn.click();
-        }
-    }, { capture: true });
-
-    // Auto-skip sponsored / promotional ad cards only if currently visible in viewport
-    setInterval(() => {
-        const adTag = document.querySelector('[data-e2e="ad-tag"], [data-e2e="feed-ad"]');
-        if (adTag) {
-            const container = adTag.closest('[data-e2e="recommend-list-item-container"], div[class*="DivItemContainer"]');
-            if (container) {
-                const rect = container.getBoundingClientRect();
-                if (rect.top >= -100 && rect.bottom <= window.innerHeight + 100) {
-                    navigate('next');
-                }
-            }
-        }
-    }, 1000);
-})();
-"""
 
 
 # Auto-focus the chat input field gently on page load for AI chat apps
@@ -618,7 +451,6 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         self.settings.set_enable_smooth_scrolling(True)
         # Enable 2D canvas acceleration via Skia GPU backend to avoid CPU-GPU texture upload stalls
         self.settings.set_enable_2d_canvas_acceleration(True)
-        self.settings.set_enable_dns_prefetching(True)
         self.settings.set_enable_page_cache(False)
         self.settings.set_enable_back_forward_navigation_gestures(True)
         self.settings.set_enable_webgl(True)
@@ -680,14 +512,6 @@ class Web2GtkWindow(Adw.ApplicationWindow):
                 self.on_generation_done
             )
 
-        # TikTok-specific feed scrolling & navigation bridge
-        if is_tiktok_app(self.manifest.url):
-            tiktok_user_script = WebKit.UserScript(
-                source=TIKTOK_OPTIMIZATION_SCRIPT,
-                injected_frames=WebKit.UserContentInjectedFrames.ALL_FRAMES,
-                injection_time=WebKit.UserScriptInjectionTime.END
-            )
-            self.user_content_manager.add_script(tiktok_user_script)
 
         # Setup built-in adblocking & YouTube ad-skipping
         if getattr(self.manifest, "adblock", True):
