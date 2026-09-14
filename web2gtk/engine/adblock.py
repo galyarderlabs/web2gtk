@@ -57,17 +57,22 @@ tp-yt-iron-overlay-backdrop[opened] {
 # Dynamic high-speed YouTube ad stripper & non-destructive fast-forward script
 YOUTUBE_ADBLOCK_SCRIPT = """
 (function() {
-    // 1. Prune ad placements from initial player response and API payloads before player loads
+    // 1. Prune ad placements and anti-adblock modals from initial player response and API payloads
+    const AD_KEYS = [
+        'adPlacements', 'adSlots', 'playerAds', 'adBreakHeartbeatParams',
+        'auxiliaryUi', 'promotedSparklesWebRenderer', 'promotedVideoRenderer',
+        'compactPromotedVideoRenderer', 'compactPromotedItemRenderer'
+    ];
+
     function pruneAds(obj) {
         if (!obj || typeof obj !== 'object') return obj;
-        delete obj.adPlacements;
-        delete obj.adSlots;
-        delete obj.playerAds;
-        delete obj.adBreakHeartbeatParams;
+        for (const k of AD_KEYS) {
+            delete obj[k];
+        }
         if (obj.playerResponse && typeof obj.playerResponse === 'object') {
-            delete obj.playerResponse.adPlacements;
-            delete obj.playerResponse.adSlots;
-            delete obj.playerResponse.playerAds;
+            for (const k of AD_KEYS) {
+                delete obj.playerResponse[k];
+            }
         }
         return obj;
     }
@@ -91,14 +96,14 @@ YOUTUBE_ADBLOCK_SCRIPT = """
             }
         });
 
-        // Hook window.fetch for dynamic SPA navigations (clicking next video, autoplay)
+        // Hook window.fetch for dynamic SPA navigations (next video, autoplay, playlist)
         if (window.fetch) {
             const origFetch = window.fetch;
             window.fetch = async function(...args) {
                 const response = await origFetch.apply(this, args);
                 try {
                     const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url) || '';
-                    if (url.includes('/youtubei/v1/player')) {
+                    if (url.includes('/youtubei/v1/player') || url.includes('/youtubei/v1/next')) {
                         const origJson = response.json;
                         response.json = async function() {
                             const data = await origJson.apply(this);
@@ -203,12 +208,14 @@ def setup_adblock(user_content_manager: WebKit.UserContentManager, cache_dir: st
         )
         user_content_manager.add_style_sheet(yt_style)
 
-    # 2. Native WebKit Content Filter Store
+    # 2. Native WebKit Content Filter Store with automatic hash-based cache invalidation
     filter_dir = os.path.join(cache_dir, "adblock_filters")
     os.makedirs(filter_dir, exist_ok=True)
     store = WebKit.UserContentFilterStore.new(filter_dir)
 
-    filter_id = "web2gtk_common_adblock"
+    import hashlib
+    rules_hash = hashlib.md5(json.dumps(COMMON_AD_RULES, sort_keys=True).encode()).hexdigest()[:8]
+    filter_id = f"web2gtk_filter_{rules_hash}"
 
     def on_filter_saved(s, res, _):
         try:
