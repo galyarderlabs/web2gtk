@@ -544,7 +544,7 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         self.settings.set_javascript_can_open_windows_automatically(True)
 
         # Performance & GPU hardware acceleration
-        self.settings.set_hardware_acceleration_policy(WebKit.HardwareAccelerationPolicy.ON_DEMAND)
+        self.settings.set_hardware_acceleration_policy(WebKit.HardwareAccelerationPolicy.ALWAYS)
         # TikTok feed relies on discrete snap actions; disable smooth scrolling interpolation to prevent micro-delta lag
         if is_tiktok_app(self.manifest.url):
             self.settings.set_enable_smooth_scrolling(False)
