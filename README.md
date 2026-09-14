@@ -68,7 +68,15 @@ sudo dnf install python3-gobject gtk4 libadwaita webkitgtk6.0 libdbusmenu-gtk3 p
 
 ## Installation
 
-Clone the repository and run the install script:
+### One-Line Quick Install (Recommended)
+
+Run the remote installer via `curl`:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/galyarderlabs/web2gtk/main/install.sh | bash
+```
+
+### Or Clone & Install Locally
 
 ```bash
 git clone https://github.com/galyarderlabs/web2gtk.git
