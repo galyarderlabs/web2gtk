@@ -1,6 +1,7 @@
 """
 Built-in Adblocker & Content Filtering Engine for web2gtk.
-Supports native WebKit declarative content filters and dynamic YouTube ad-skipping.
+Supports native WebKit declarative content filters, cosmetic stylesheet injection,
+and high-speed non-destructive YouTube ad skipping.
 """
 
 import os
@@ -39,6 +40,8 @@ ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
 .ytp-ad-message-container,
 .ytp-ad-overlay-slot,
 .ytp-ad-overlay-image,
+.ytp-ad-action-interstitial,
+.ytp-ad-player-overlay-layout,
 ytd-promoted-sparkles-web-renderer,
 ytd-banner-promo-renderer,
 #player-ads,
@@ -50,32 +53,100 @@ tp-yt-iron-overlay-backdrop[opened] {
 }
 """
 
-# YouTube safe ad skipper: mutes ad audio, instantly clicks skip buttons, fast-skips short ads,
-# and dismisses interstitial dialogs without tampering with JS global prototypes or main video buffers
+# YouTube non-intrusive safe ad skipper:
+# 1. Instantly clicks all modern/legacy Skip buttons with native pointer & mouse event sequence.
+# 2. Silences ad audio immediately (video.muted = true).
+# 3. Accelerates ad playback to 16x speed without ever mutating video.currentTime (prevents anti-adblock violation and GStreamer seek crashes).
+# 4. Auto-dismisses consent and interstitial popups.
+# 5. Listens reactively via MutationObserver and polling interval.
 YOUTUBE_ADBLOCK_SCRIPT = """
 (function() {
     let adMuted = false;
+
+    function triggerClick(el) {
+        if (!el) return;
+        try { el.click(); } catch(e) {}
+        try {
+            const rect = el.getBoundingClientRect();
+            const clientX = rect.left + rect.width / 2;
+            const clientY = rect.top + rect.height / 2;
+            const opts = {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                clientX: clientX,
+                clientY: clientY,
+                button: 0,
+                buttons: 1
+            };
+            el.dispatchEvent(new PointerEvent('pointerdown', opts));
+            el.dispatchEvent(new MouseEvent('mousedown', opts));
+            el.dispatchEvent(new PointerEvent('pointerup', opts));
+            el.dispatchEvent(new MouseEvent('mouseup', opts));
+            el.dispatchEvent(new MouseEvent('click', opts));
+        } catch(e) {}
+    }
 
     function clickSkipButtons() {
         const selectors = [
             '.ytp-skip-ad-button',
             '.ytp-ad-skip-button',
             '.ytp-ad-skip-button-modern',
+            '.ytp-ad-skip-button-container',
             '.ytp-ad-skip-button-slot button',
             'button.ytp-ad-skip-button',
+            'button.ytp-ad-skip-button-modern',
+            '[class*="skip-button"]',
+            '[class*="skip-ad-button"]',
+            '[id*="skip-button"]',
             'button.ytp-ad-overlay-close-button',
             '.ytp-ad-overlay-close-button',
-            '.ytp-ad-overlay-slot .ytp-ad-overlay-close-button'
+            '.ytp-ad-overlay-slot .ytp-ad-overlay-close-button',
+            'button[aria-label*="skip" i]',
+            'button[aria-label*="lewati" i]',
+            '[class*="ytp-ad-skip"]'
         ];
+
         for (const sel of selectors) {
-            const btn = document.querySelector(sel);
-            if (btn && typeof btn.click === 'function') {
-                btn.click();
+            const els = document.querySelectorAll(sel);
+            for (const el of els) {
+                triggerClick(el);
             }
         }
-        const dismiss = document.querySelector('tp-yt-paper-dialog #dismiss-button, #dismiss-button, .style-scope.yt-confirm-dialog-renderer');
-        if (dismiss && typeof dismiss.click === 'function') {
-            dismiss.click();
+
+        // Generic text scan inside player for any button containing "skip" or "lewati"
+        const player = document.querySelector('#movie_player, .html5-video-player');
+        if (player) {
+            const candidates = player.querySelectorAll('button, [role="button"], div[class*="button"]');
+            for (const btn of candidates) {
+                const text = (btn.textContent || '').trim().toLowerCase();
+                if (text === 'skip' || text.startsWith('skip ') || text === 'lewati' || text.startsWith('lewati ') || text === 'skip ad' || text === 'skip ads') {
+                    triggerClick(btn);
+                }
+            }
+        }
+
+        // Auto-dismiss anti-adblock or confirmation dialogs
+        const dismissSelectors = [
+            'tp-yt-paper-dialog #dismiss-button',
+            '#dismiss-button',
+            '.style-scope.yt-confirm-dialog-renderer',
+            'ytd-enforcement-message-view-model #dismiss-button',
+            'yt-button-renderer#dismiss-button'
+        ];
+        for (const sel of dismissSelectors) {
+            const btn = document.querySelector(sel);
+            if (btn) triggerClick(btn);
+        }
+
+        // Remove enforcement model & backdrop if present
+        const enforcement = document.querySelector('ytd-enforcement-message-view-model');
+        if (enforcement) {
+            enforcement.remove();
+            const backdrop = document.querySelector('tp-yt-iron-overlay-backdrop[opened]');
+            if (backdrop) backdrop.remove();
+            const video = document.querySelector('video');
+            if (video && video.paused) video.play().catch(() => {});
         }
     }
 
@@ -83,7 +154,9 @@ YOUTUBE_ADBLOCK_SCRIPT = """
         const player = document.querySelector('#movie_player, .html5-video-player');
         if (!player) return;
 
-        const isAd = player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
+        const isAd = player.classList.contains('ad-showing') || 
+                     player.classList.contains('ad-interrupting') ||
+                     document.querySelector('.ytp-ad-player-overlay, .ytp-ad-preview-container, .ytp-ad-text') !== null;
         const video = player.querySelector('video.html5-main-video, video');
 
         if (isAd && video) {
@@ -92,25 +165,52 @@ YOUTUBE_ADBLOCK_SCRIPT = """
                 video.muted = true;
                 adMuted = true;
             }
-            // Safely advance only if ad video has buffered data (readyState >= 3)
-            // Never touch currentTime during seek or buffering state
-            if (video.readyState >= 3 && isFinite(video.duration) && video.duration > 0 && video.duration <= 180) {
-                if (video.currentTime < video.duration) {
-                    video.currentTime = video.duration;
-                }
+            // Accelerate ad playback so it finishes in milliseconds without touching currentTime
+            if (video.playbackRate < 16.0) {
+                video.playbackRate = 16.0;
+            }
+            // Resume if paused by ad injection
+            if (video.paused) {
+                video.play().catch(() => {});
             }
             clickSkipButtons();
         } else if (adMuted && video) {
-            // Ad ended, restore audio
+            // Ad ended: restore user audio and playback speed immediately
             adMuted = false;
             video.muted = false;
+            if (video.playbackRate > 2.0) {
+                video.playbackRate = 1.0;
+            }
         }
     }
 
+    // Fast polling fallback (100ms)
     setInterval(() => {
         clickSkipButtons();
         handleVideoAd();
     }, 100);
+
+    // Reactive DOM observer for immediate response to ad class or button injection
+    function setupObserver() {
+        const target = document.querySelector('#movie_player, .html5-video-player, ytd-app') || document.body;
+        if (!target) return;
+        const observer = new MutationObserver(() => {
+            clickSkipButtons();
+            handleVideoAd();
+        });
+        observer.observe(target, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class', 'src']
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupObserver);
+    } else {
+        setupObserver();
+    }
 })();
 """
 
@@ -123,8 +223,8 @@ def setup_adblock(user_content_manager: WebKit.UserContentManager, cache_dir: st
     if is_youtube:
         yt_script = WebKit.UserScript(
             source=YOUTUBE_ADBLOCK_SCRIPT,
-            injected_frames=WebKit.UserContentInjectedFrames.TOP_FRAME,
-            injection_time=WebKit.UserScriptInjectionTime.END
+            injected_frames=WebKit.UserContentInjectedFrames.ALL_FRAMES,
+            injection_time=WebKit.UserScriptInjectionTime.START
         )
         user_content_manager.add_script(yt_script)
 
@@ -136,8 +236,6 @@ def setup_adblock(user_content_manager: WebKit.UserContentManager, cache_dir: st
             block_list=None
         )
         user_content_manager.add_style_sheet(yt_style)
-        # Skip raw network content filtering for YouTube to prevent anti-adblock playback crashes
-        return
 
     # 2. Native WebKit Content Filter Store with automatic hash-based cache invalidation
     filter_dir = os.path.join(cache_dir, "adblock_filters")
@@ -179,4 +277,3 @@ def setup_adblock(user_content_manager: WebKit.UserContentManager, cache_dir: st
         store.load(filter_id, None, on_filter_loaded, None)
     except Exception:
         compile_rules()
-
