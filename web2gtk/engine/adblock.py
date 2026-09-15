@@ -48,26 +48,33 @@ tp-yt-iron-overlay-backdrop[opened] {
 }
 """
 
-# YouTube instant ad skipper (mutes and skips ads instantly without interfering with main video scrubbing)
+# YouTube safe ad skipper: mutes and fast-forwards short ad segments and auto-clicks skip buttons
+# NEVER modifies video.currentTime or touches main video buffers to prevent seek crashes
 YOUTUBE_ADBLOCK_SCRIPT = """
 (function() {
     let adMuted = false;
+    let wasAd = false;
 
-    function skipAd() {
+    function handleAds() {
         const player = document.querySelector('#movie_player, .html5-video-player');
         const video = document.querySelector('video.html5-main-video, video');
         if (!player || !video) return;
 
+        // An ad is actively displaying if player has ad classes
         const isAd = player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
-        if (isAd) {
+        // Only treat as an ad if video duration is realistic for an ad (<= 120s) to never touch the main video
+        const isShortAd = isAd && isFinite(video.duration) && video.duration > 0 && video.duration <= 120;
+
+        if (isShortAd) {
+            wasAd = true;
             // Mute ad audio so user hears nothing
             if (!video.muted) {
                 video.muted = true;
                 adMuted = true;
             }
-            // Skip instantly to the end of the ad
-            if (isFinite(video.duration) && video.duration > 0 && video.currentTime < video.duration) {
-                video.currentTime = video.duration;
+            // Fast forward ad without altering currentTime buffer state
+            if (video.playbackRate < 16.0) {
+                video.playbackRate = 16.0;
             }
 
             // Click skip button immediately if available
@@ -79,18 +86,30 @@ YOUTUBE_ADBLOCK_SCRIPT = """
                     btn.click();
                 }
             }
-        } else if (adMuted) {
-            adMuted = false;
-            video.muted = false;
+        } else if (wasAd) {
+            wasAd = false;
+            // Restore normal speed
+            video.playbackRate = 1.0;
+            if (adMuted) {
+                adMuted = false;
+                video.muted = false;
+            }
         }
 
+        // Auto-click any available skip button regardless of timing
+        const anySkipBtn = document.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern');
+        if (anySkipBtn && typeof anySkipBtn.click === 'function') {
+            anySkipBtn.click();
+        }
+
+        // Dismiss interstitial dialogs
         const dismissBtn = document.querySelector('tp-yt-paper-dialog #dismiss-button, #dismiss-button');
         if (dismissBtn && typeof dismissBtn.click === 'function') {
             dismissBtn.click();
         }
     }
 
-    setInterval(skipAd, 200);
+    setInterval(handleAds, 200);
 })();
 """
 
@@ -116,6 +135,8 @@ def setup_adblock(user_content_manager: WebKit.UserContentManager, cache_dir: st
             block_list=None
         )
         user_content_manager.add_style_sheet(yt_style)
+        # Skip raw network content filtering for YouTube to prevent anti-adblock playback crashes
+        return
 
     # 2. Native WebKit Content Filter Store with automatic hash-based cache invalidation
     filter_dir = os.path.join(cache_dir, "adblock_filters")
@@ -131,8 +152,7 @@ def setup_adblock(user_content_manager: WebKit.UserContentManager, cache_dir: st
             compiled_filter = s.save_from_file_finish(res)
             if compiled_filter:
                 user_content_manager.add_filter(compiled_filter)
-        except Exception as e:
-            # Fallback or already saved
+        except Exception:
             pass
 
     def on_filter_loaded(s, res, _):
@@ -141,7 +161,6 @@ def setup_adblock(user_content_manager: WebKit.UserContentManager, cache_dir: st
             if compiled_filter:
                 user_content_manager.add_filter(compiled_filter)
         except Exception:
-            # Recompile from rules JSON
             compile_rules()
 
     def compile_rules():
@@ -155,8 +174,8 @@ def setup_adblock(user_content_manager: WebKit.UserContentManager, cache_dir: st
         except Exception:
             pass
 
-    # Try loading existing compiled filter first, otherwise compile
     try:
         store.load(filter_id, None, on_filter_loaded, None)
     except Exception:
         compile_rules()
+
