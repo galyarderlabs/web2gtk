@@ -48,58 +48,96 @@ tp-yt-iron-overlay-backdrop[opened] {
 }
 """
 
-# YouTube safe ad skipper: mutes and fast-forwards short ad segments and auto-clicks skip buttons
-# NEVER modifies video.currentTime or touches main video buffers to prevent seek crashes
+# YouTube ad stripper: eliminates ad placements at payload level (ytInitialPlayerResponse, JSON.parse, fetch)
+# and provides auto-skip button clicking without touching video playback rate or buffer timeline
 YOUTUBE_ADBLOCK_SCRIPT = """
 (function() {
+    // 1. Prune ad placements and anti-adblock modals from initial player response and API payloads
+    const AD_KEYS = [
+        'adPlacements', 'adSlots', 'playerAds', 'adBreakHeartbeatParams',
+        'auxiliaryUi', 'promotedSparklesWebRenderer', 'promotedVideoRenderer',
+        'compactPromotedVideoRenderer', 'compactPromotedItemRenderer'
+    ];
+
+    function pruneAds(obj) {
+        if (!obj || typeof obj !== 'object') return obj;
+        for (const k of AD_KEYS) {
+            delete obj[k];
+        }
+        if (obj.playerResponse && typeof obj.playerResponse === 'object') {
+            for (const k of AD_KEYS) {
+                delete obj.playerResponse[k];
+            }
+        }
+        return obj;
+    }
+
+    try {
+        // Hook JSON.parse
+        const origParse = JSON.parse;
+        JSON.parse = function(...args) {
+            const res = origParse.apply(this, args);
+            return pruneAds(res);
+        };
+
+        // Hook initial page player payload
+        let _ytPlayerResponse = undefined;
+        Object.defineProperty(window, 'ytInitialPlayerResponse', {
+            configurable: true,
+            enumerable: true,
+            get() { return _ytPlayerResponse; },
+            set(val) {
+                _ytPlayerResponse = pruneAds(val);
+            }
+        });
+
+        // Hook window.fetch for dynamic SPA navigations (next video, autoplay, playlist)
+        if (window.fetch) {
+            const origFetch = window.fetch;
+            window.fetch = async function(...args) {
+                const response = await origFetch.apply(this, args);
+                try {
+                    const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url) || '';
+                    if (url.includes('/youtubei/v1/player') || url.includes('/youtubei/v1/next')) {
+                        const origJson = response.json;
+                        response.json = async function() {
+                            const data = await origJson.apply(this);
+                            return pruneAds(data);
+                        };
+                    }
+                } catch(e) {}
+                return response;
+            };
+        }
+    } catch(e) {}
+
+    // 2. Runtime fallback: auto-click skip buttons and mute any residual ad without touching playback rate or currentTime
     let adMuted = false;
-    let wasAd = false;
 
     function handleAds() {
         const player = document.querySelector('#movie_player, .html5-video-player');
         const video = document.querySelector('video.html5-main-video, video');
         if (!player || !video) return;
 
-        // An ad is actively displaying if player has ad classes
         const isAd = player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
-        // Only treat as an ad if video duration is realistic for an ad (<= 120s) to never touch the main video
-        const isShortAd = isAd && isFinite(video.duration) && video.duration > 0 && video.duration <= 120;
-
-        if (isShortAd) {
-            wasAd = true;
-            // Mute ad audio so user hears nothing
+        if (isAd) {
             if (!video.muted) {
                 video.muted = true;
                 adMuted = true;
             }
-            // Fast forward ad without altering currentTime buffer state
-            if (video.playbackRate < 16.0) {
-                video.playbackRate = 16.0;
-            }
-
-            // Click skip button immediately if available
-            const skipButtons = document.querySelectorAll(
-                '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-slot button, button.ytp-ad-skip-button, button.ytp-ad-overlay-close-button'
-            );
-            for (const btn of skipButtons) {
-                if (btn && typeof btn.click === 'function') {
-                    btn.click();
-                }
-            }
-        } else if (wasAd) {
-            wasAd = false;
-            // Restore normal speed
-            video.playbackRate = 1.0;
-            if (adMuted) {
-                adMuted = false;
-                video.muted = false;
-            }
+        } else if (adMuted) {
+            adMuted = false;
+            video.muted = false;
         }
 
-        // Auto-click any available skip button regardless of timing
-        const anySkipBtn = document.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern');
-        if (anySkipBtn && typeof anySkipBtn.click === 'function') {
-            anySkipBtn.click();
+        // Auto-click any available skip button immediately
+        const skipButtons = document.querySelectorAll(
+            '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-slot button, button.ytp-ad-skip-button, button.ytp-ad-overlay-close-button'
+        );
+        for (const btn of skipButtons) {
+            if (btn && typeof btn.click === 'function') {
+                btn.click();
+            }
         }
 
         // Dismiss interstitial dialogs
