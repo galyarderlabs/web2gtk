@@ -515,6 +515,8 @@ class Web2GtkWindow(Adw.ApplicationWindow):
 
         # Tray notification dedup state
         self._last_notified_title = None
+        self._is_navigating = False
+        self._progress_timeout_id = None
         self.connect("notify::visible", self.on_visibility_changed)
 
         # Intercept close request
@@ -826,14 +828,14 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         self.web_view.reload()
 
     def on_progress_changed(self, web_view, _):
+        if not getattr(self, "_is_navigating", False):
+            # Background sub-resource or streaming activity in SPAs must not resurrect progress bar
+            return
         progress = web_view.get_estimated_load_progress()
         self.progress_bar.set_fraction(progress)
-        # Modern SPAs (Threads, Instagram, etc.) hold open background streaming connections,
-        # keeping WebKit estimated progress at ~0.95. Hide progress bar once page is rendered (>= 0.95).
+        # Auto-finish once page has effectively loaded
         if progress >= 0.95:
             self._auto_finish_progress()
-        else:
-            self.progress_bar.set_visible(True)
 
     def on_title_changed(self, web_view, _):
         title = web_view.get_title()
@@ -936,17 +938,26 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         return False
 
     def on_load_changed(self, web_view, load_event):
-        if load_event == WebKit.LoadEvent.COMMITTED:
-            # Main document committed and rendering; auto-hide progress bar after 1.5s if background streams prevent FINISHED event
+        if load_event == WebKit.LoadEvent.STARTED:
+            self._is_navigating = True
+            self.progress_bar.set_fraction(0.1)
+            self.progress_bar.set_visible(True)
+
+        elif load_event == WebKit.LoadEvent.COMMITTED:
+            # Main document committed and rendering; auto-hide progress bar after 800ms
+            # even if SPA long-lived streams prevent the FINISHED event from firing
+            self.btn_back.set_sensitive(self.web_view.can_go_back())
+            self.btn_forward.set_sensitive(self.web_view.can_go_forward())
+            self.web_view.grab_focus()
             if hasattr(self, "_progress_timeout_id") and self._progress_timeout_id:
                 GLib.source_remove(self._progress_timeout_id)
-            self._progress_timeout_id = GLib.timeout_add(1500, self._auto_finish_progress)
+            self._progress_timeout_id = GLib.timeout_add(800, self._auto_finish_progress)
 
         elif load_event == WebKit.LoadEvent.FINISHED:
             self._auto_finish_progress()
-            self.web_view.grab_focus()
 
     def _auto_finish_progress(self):
+        self._is_navigating = False
         if hasattr(self, "_progress_timeout_id") and self._progress_timeout_id:
             GLib.source_remove(self._progress_timeout_id)
             self._progress_timeout_id = None
@@ -954,10 +965,12 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         self.progress_bar.set_visible(False)
         self.btn_back.set_sensitive(self.web_view.can_go_back())
         self.btn_forward.set_sensitive(self.web_view.can_go_forward())
+        self.web_view.grab_focus()
         return False
 
     def on_load_failed(self, web_view, load_event, failing_uri, error):
         """Ignore navigation cancellations (e.g. client redirects, pushState) to avoid error pages."""
+        self._auto_finish_progress()
         if getattr(error, "code", None) == 302 or "cancelled" in str(error).lower():
             return True
         return False
