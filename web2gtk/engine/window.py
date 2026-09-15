@@ -561,10 +561,12 @@ class Web2GtkWindow(Adw.ApplicationWindow):
 
         # Performance & GPU hardware acceleration
         self.settings.set_hardware_acceleration_policy(WebKit.HardwareAccelerationPolicy.ALWAYS)
-        self.settings.set_enable_smooth_scrolling(True)
-        # Enable 2D canvas acceleration via Skia GPU backend to avoid CPU-GPU texture upload stalls
-        self.settings.set_enable_2d_canvas_acceleration(True)
-        self.settings.set_enable_page_cache(False)
+        # Disable WebKit's software smooth scrolling interpolation on Wayland/GTK4 to eliminate
+        # sludge-like input latency; native compositor/libinput kinetic scroll delivers crisp 1:1 response.
+        self.settings.set_enable_smooth_scrolling(False)
+        # Avoid Skia GPU backend texture synchronization stalls on Intel integrated GPUs
+        self.settings.set_enable_2d_canvas_acceleration(False)
+        self.settings.set_enable_page_cache(True)
         self.settings.set_enable_back_forward_navigation_gestures(True)
         self.settings.set_enable_webgl(True)
         self.settings.set_enable_media(True)
