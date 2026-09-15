@@ -37,6 +37,8 @@ ytd-ad-slot-renderer,
 ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
 .ytp-ad-overlay-container,
 .ytp-ad-message-container,
+.ytp-ad-overlay-slot,
+.ytp-ad-overlay-image,
 ytd-promoted-sparkles-web-renderer,
 ytd-banner-promo-renderer,
 #player-ads,
@@ -62,7 +64,8 @@ YOUTUBE_ADBLOCK_SCRIPT = """
             '.ytp-ad-skip-button-slot button',
             'button.ytp-ad-skip-button',
             'button.ytp-ad-overlay-close-button',
-            '.ytp-ad-overlay-close-button'
+            '.ytp-ad-overlay-close-button',
+            '.ytp-ad-overlay-slot .ytp-ad-overlay-close-button'
         ];
         for (const sel of selectors) {
             const btn = document.querySelector(sel);
@@ -70,7 +73,7 @@ YOUTUBE_ADBLOCK_SCRIPT = """
                 btn.click();
             }
         }
-        const dismiss = document.querySelector('tp-yt-paper-dialog #dismiss-button, #dismiss-button');
+        const dismiss = document.querySelector('tp-yt-paper-dialog #dismiss-button, #dismiss-button, .style-scope.yt-confirm-dialog-renderer');
         if (dismiss && typeof dismiss.click === 'function') {
             dismiss.click();
         }
@@ -89,8 +92,9 @@ YOUTUBE_ADBLOCK_SCRIPT = """
                 video.muted = true;
                 adMuted = true;
             }
-            // Fast-forward short ad segments (ads are <= 120s) to end of ad instantly
-            if (isFinite(video.duration) && video.duration > 0 && video.duration <= 120) {
+            // Safely advance only if ad video has buffered data (readyState >= 3)
+            // Never touch currentTime during seek or buffering state
+            if (video.readyState >= 3 && isFinite(video.duration) && video.duration > 0 && video.duration <= 180) {
                 if (video.currentTime < video.duration) {
                     video.currentTime = video.duration;
                 }
@@ -106,7 +110,7 @@ YOUTUBE_ADBLOCK_SCRIPT = """
     setInterval(() => {
         clickSkipButtons();
         handleVideoAd();
-    }, 150);
+    }, 100);
 })();
 """
 
