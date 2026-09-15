@@ -53,15 +53,105 @@ tp-yt-iron-overlay-backdrop[opened] {
 """
 
 # Ultra-lightweight YouTube ad handler:
+# - Strips ad placements from ytInitialPlayerResponse and fetch payload before player loads
+# - Resilient skip button clicker targeting both class selectors and button text (Skip / Lewati)
+# - Auto-mutes and fast-forwards short ads without touching video.currentTime or player state
 # - Zero MutationObserver loops to guarantee 0% CPU and zero memory leak
-# - Never mutates video.currentTime or calls loadVideoByPlayerVars to prevent seek crashes and anti-adblock errors
-# - Auto-clicks skip buttons and mutes ad audio
-# - Fast-forwards unskippable bumper ads safely at 16x without decoding stalls
-# - Auto-dismisses interstitial and enforcement dialogs
 YOUTUBE_ADBLOCK_SCRIPT = """
 (function() {
+    // 1. Strip ad placements from initial payload and SPA player fetch requests
+    const AD_KEYS = [
+        'adPlacements', 'adSlots', 'playerAds', 'adBreakHeartbeatParams',
+        'auxiliaryUi', 'promotedSparklesWebRenderer', 'promotedVideoRenderer',
+        'compactPromotedVideoRenderer', 'compactPromotedItemRenderer'
+    ];
+
+    function pruneAds(obj) {
+        if (!obj || typeof obj !== 'object') return obj;
+        for (let i = 0; i < AD_KEYS.length; i++) {
+            delete obj[AD_KEYS[i]];
+        }
+        if (obj.playerResponse && typeof obj.playerResponse === 'object') {
+            for (let i = 0; i < AD_KEYS.length; i++) {
+                delete obj.playerResponse[AD_KEYS[i]];
+            }
+        }
+        return obj;
+    }
+
+    try {
+        let _ytPlayerResponse = undefined;
+        Object.defineProperty(window, 'ytInitialPlayerResponse', {
+            configurable: true,
+            enumerable: true,
+            get() { return _ytPlayerResponse; },
+            set(val) {
+                _ytPlayerResponse = pruneAds(val);
+            }
+        });
+
+        if (window.fetch) {
+            const origFetch = window.fetch;
+            window.fetch = async function(...args) {
+                const response = await origFetch.apply(this, args);
+                try {
+                    const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url) || '';
+                    if (url.includes('/youtubei/v1/player')) {
+                        const clone = response.clone();
+                        const data = await clone.json();
+                        pruneAds(data);
+                        return new Response(JSON.stringify(data), {
+                            status: response.status,
+                            statusText: response.statusText,
+                            headers: response.headers
+                        });
+                    }
+                } catch(e) {}
+                return response;
+            };
+        }
+    } catch(e) {}
+
+    // 2. Runtime fallback: fast-forward and auto-skip residual ads
     let wasAd = false;
     let adMuted = false;
+
+    function findSkipButton() {
+        const selectors = [
+            '.ytp-skip-ad-button',
+            '.ytp-ad-skip-button',
+            '.ytp-ad-skip-button-modern',
+            '.ytp-ad-skip-button-slot button',
+            'button.ytp-ad-skip-button',
+            'button.ytp-ad-skip-button-modern',
+            '.ytp-ad-skip-button-container button',
+            'button[aria-label*="Skip"]',
+            'button[class*="skip"]',
+            '[id^="skip-button"]'
+        ];
+        for (let i = 0; i < selectors.length; i++) {
+            const el = document.querySelector(selectors[i]);
+            if (el) return el;
+        }
+        // Fallback: search player buttons by text content (e.g. "Skip", "Lewati")
+        const buttons = document.querySelectorAll('#movie_player button, .video-ads button, .ytp-ad-module button');
+        for (let i = 0; i < buttons.length; i++) {
+            const text = (buttons[i].textContent || '').toLowerCase().trim();
+            if (text.includes('skip') || text.includes('lewati')) {
+                return buttons[i];
+            }
+        }
+        return null;
+    }
+
+    function triggerClick(el) {
+        if (!el) return;
+        try { el.click(); } catch(e) {}
+        try {
+            const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+            el.dispatchEvent(evt);
+        } catch(e) {}
+    }
 
     function handleAds() {
         const player = document.querySelector('#movie_player, .html5-video-player');
@@ -96,11 +186,9 @@ YOUTUBE_ADBLOCK_SCRIPT = """
             }
 
             // Click skip button immediately when available
-            const skipBtn = document.querySelector(
-                '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-slot button, button.ytp-ad-skip-button, button.ytp-ad-skip-button-modern, .ytp-ad-skip-button-container button, [id^="skip-button"]'
-            );
-            if (skipBtn && typeof skipBtn.click === 'function') {
-                skipBtn.click();
+            const skipBtn = findSkipButton();
+            if (skipBtn) {
+                triggerClick(skipBtn);
             }
         } else {
             if (wasAd) {
@@ -123,17 +211,16 @@ YOUTUBE_ADBLOCK_SCRIPT = """
             }
         }
 
-        // Always click overlay close buttons if present
+        // Always click skip or overlay close buttons if present
+        const anySkip = findSkipButton();
+        if (anySkip) triggerClick(anySkip);
+
         const closeBtn = document.querySelector('.ytp-ad-overlay-close-button, button.ytp-ad-overlay-close-button');
-        if (closeBtn && typeof closeBtn.click === 'function') {
-            closeBtn.click();
-        }
+        if (closeBtn) triggerClick(closeBtn);
 
         // Dismiss anti-adblock or confirmation dialogs
         const dismiss = document.querySelector('tp-yt-paper-dialog #dismiss-button, #dismiss-button, .style-scope.yt-confirm-dialog-renderer');
-        if (dismiss && typeof dismiss.click === 'function') {
-            dismiss.click();
-        }
+        if (dismiss) triggerClick(dismiss);
 
         const enforcement = document.querySelector('ytd-enforcement-message-view-model');
         if (enforcement) {

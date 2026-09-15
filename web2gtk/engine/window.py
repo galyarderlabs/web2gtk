@@ -545,7 +545,12 @@ class Web2GtkWindow(Adw.ApplicationWindow):
 
         # WebKit Settings & GPU Hardware Acceleration
         self.settings = WebKit.Settings()
-        self.settings.set_user_agent(self.manifest.user_agent)
+        if "youtube.com" in (self.manifest.url or "").lower():
+            self.settings.set_user_agent(
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+            )
+        else:
+            self.settings.set_user_agent(self.manifest.user_agent)
         self.settings.set_enable_developer_extras(True)
         self.settings.set_enable_webrtc(True)
         self.settings.set_enable_media_stream(True)
