@@ -80,6 +80,13 @@ YOUTUBE_ADBLOCK_SCRIPT = """
     }
 
     try {
+        // Hook JSON.parse to prune ad placements from all API & XHR responses (including InnerTube)
+        const origParse = JSON.parse;
+        JSON.parse = function(...args) {
+            const res = origParse.apply(this, args);
+            return pruneAds(res);
+        };
+
         let _ytPlayerResponse = undefined;
         Object.defineProperty(window, 'ytInitialPlayerResponse', {
             configurable: true,
@@ -96,7 +103,7 @@ YOUTUBE_ADBLOCK_SCRIPT = """
                 const response = await origFetch.apply(this, args);
                 try {
                     const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url) || '';
-                    if (url.includes('/youtubei/v1/player')) {
+                    if (url.includes('/youtubei/v1/player') || url.includes('/youtubei/v1/next')) {
                         const clone = response.clone();
                         const data = await clone.json();
                         pruneAds(data);
