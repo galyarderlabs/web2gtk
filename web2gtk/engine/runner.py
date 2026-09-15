@@ -2,10 +2,6 @@ import os
 import sys
 import argparse
 
-# Hardware video acceleration and VA-API driver configuration
-os.environ.setdefault("LIBVA_DRIVER_NAME", "iHD")
-os.environ.setdefault("GST_VAAPI_ALL_DRIVERS", "1")
-os.environ.setdefault("GST_REGISTRY_FORK", "no")
 
 # Reset process niceness if inherited from high-priority parent (e.g. gnome-shell at -12)
 # Ensures web apps run at normal unthrottled desktop priority (nice 0) without inheriting compositor priority
