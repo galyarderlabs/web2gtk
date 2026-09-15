@@ -40,8 +40,6 @@ ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
 ytd-promoted-sparkles-web-renderer,
 ytd-banner-promo-renderer,
 #player-ads,
-.video-ads,
-.ytp-ad-module,
 ytd-in-feed-ad-layout-renderer,
 ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"],
 ytd-enforcement-message-view-model,
@@ -50,25 +48,49 @@ tp-yt-iron-overlay-backdrop[opened] {
 }
 """
 
-# YouTube safe auto-skip button handler (clicks Skip Ad button without touching video playback rate or state)
+# YouTube instant ad skipper (mutes and skips ads instantly without interfering with main video scrubbing)
 YOUTUBE_ADBLOCK_SCRIPT = """
 (function() {
-    function autoSkip() {
-        const skipButtons = document.querySelectorAll(
-            '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-slot button, button.ytp-ad-skip-button, button.ytp-ad-overlay-close-button'
-        );
-        for (const btn of skipButtons) {
-            if (btn && typeof btn.click === 'function') {
-                btn.click();
+    let adMuted = false;
+
+    function skipAd() {
+        const player = document.querySelector('#movie_player, .html5-video-player');
+        const video = document.querySelector('video.html5-main-video, video');
+        if (!player || !video) return;
+
+        const isAd = player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
+        if (isAd) {
+            // Mute ad audio so user hears nothing
+            if (!video.muted) {
+                video.muted = true;
+                adMuted = true;
             }
+            // Skip instantly to the end of the ad
+            if (isFinite(video.duration) && video.duration > 0 && video.currentTime < video.duration) {
+                video.currentTime = video.duration;
+            }
+
+            // Click skip button immediately if available
+            const skipButtons = document.querySelectorAll(
+                '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-slot button, button.ytp-ad-skip-button, button.ytp-ad-overlay-close-button'
+            );
+            for (const btn of skipButtons) {
+                if (btn && typeof btn.click === 'function') {
+                    btn.click();
+                }
+            }
+        } else if (adMuted) {
+            adMuted = false;
+            video.muted = false;
         }
+
         const dismissBtn = document.querySelector('tp-yt-paper-dialog #dismiss-button, #dismiss-button');
         if (dismissBtn && typeof dismissBtn.click === 'function') {
             dismissBtn.click();
         }
     }
 
-    setInterval(autoSkip, 500);
+    setInterval(skipAd, 200);
 })();
 """
 
