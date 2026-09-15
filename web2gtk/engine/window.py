@@ -828,7 +828,12 @@ class Web2GtkWindow(Adw.ApplicationWindow):
     def on_progress_changed(self, web_view, _):
         progress = web_view.get_estimated_load_progress()
         self.progress_bar.set_fraction(progress)
-        self.progress_bar.set_visible(progress < 1.0)
+        # Modern SPAs (Threads, Instagram, etc.) hold open background streaming connections,
+        # keeping WebKit estimated progress at ~0.95. Hide progress bar once page is rendered (>= 0.95).
+        if progress >= 0.95:
+            self._auto_finish_progress()
+        else:
+            self.progress_bar.set_visible(True)
 
     def on_title_changed(self, web_view, _):
         title = web_view.get_title()
@@ -931,11 +936,25 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         return False
 
     def on_load_changed(self, web_view, load_event):
-        if load_event == WebKit.LoadEvent.FINISHED:
-            self.progress_bar.set_visible(False)
-            self.btn_back.set_sensitive(web_view.can_go_back())
-            self.btn_forward.set_sensitive(web_view.can_go_forward())
+        if load_event == WebKit.LoadEvent.COMMITTED:
+            # Main document committed and rendering; auto-hide progress bar after 1.5s if background streams prevent FINISHED event
+            if hasattr(self, "_progress_timeout_id") and self._progress_timeout_id:
+                GLib.source_remove(self._progress_timeout_id)
+            self._progress_timeout_id = GLib.timeout_add(1500, self._auto_finish_progress)
+
+        elif load_event == WebKit.LoadEvent.FINISHED:
+            self._auto_finish_progress()
             self.web_view.grab_focus()
+
+    def _auto_finish_progress(self):
+        if hasattr(self, "_progress_timeout_id") and self._progress_timeout_id:
+            GLib.source_remove(self._progress_timeout_id)
+            self._progress_timeout_id = None
+        self.progress_bar.set_fraction(1.0)
+        self.progress_bar.set_visible(False)
+        self.btn_back.set_sensitive(self.web_view.can_go_back())
+        self.btn_forward.set_sensitive(self.web_view.can_go_forward())
+        return False
 
     def on_load_failed(self, web_view, load_event, failing_uri, error):
         """Ignore navigation cancellations (e.g. client redirects, pushState) to avoid error pages."""
