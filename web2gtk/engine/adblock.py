@@ -50,75 +50,25 @@ tp-yt-iron-overlay-backdrop[opened] {
 }
 """
 
-# Dynamic high-speed YouTube ad stripper & non-destructive fast-forward script
+# YouTube safe auto-skip button handler (clicks Skip Ad button without touching video playback rate or state)
 YOUTUBE_ADBLOCK_SCRIPT = """
 (function() {
-    // Non-destructive runtime fallback: 16x fast-forward without seeking and auto-skip
-    let weMuted = false;
-    let lastAd = false;
-
-    function handleAds() {
-        const player = document.querySelector('#movie_player, .html5-video-player');
-        const video = document.querySelector('#movie_player video, video.html5-main-video, video');
-        if (!player || !video) return;
-
-        const isAd = player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
-
-        if (isAd) {
-            lastAd = true;
-            // Mute during ad
-            if (!video.muted) {
-                video.muted = true;
-                weMuted = true;
-            }
-            // Accelerate without seeking (YouTube rejects seek but allows high playback rate)
-            if (video.playbackRate < 16.0) {
-                video.playbackRate = 16.0;
-            }
-
-            // Immediately click any skip button if available
-            const skipButtons = document.querySelectorAll(
-                '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-slot button, button.ytp-ad-skip-button'
-            );
-            for (const btn of skipButtons) {
-                if (btn && typeof btn.click === 'function') {
-                    btn.click();
-                }
-            }
-
-            // If YouTube paused the video, resume playback automatically
-            if (video.paused) {
-                video.play().catch(() => {});
-            }
-        } else if (lastAd) {
-            // Ad ended: restore audio and normal speed immediately
-            lastAd = false;
-            if (weMuted) {
-                video.muted = false;
-                weMuted = false;
-            }
-            video.playbackRate = 1.0;
-            if (video.paused) {
-                video.play().catch(() => {});
+    function autoSkip() {
+        const skipButtons = document.querySelectorAll(
+            '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-slot button, button.ytp-ad-skip-button, button.ytp-ad-overlay-close-button'
+        );
+        for (const btn of skipButtons) {
+            if (btn && typeof btn.click === 'function') {
+                btn.click();
             }
         }
-
-        // Dismiss anti-adblock modal or interstitial dialogs
-        const enforcement = document.querySelector('ytd-enforcement-message-view-model');
-        if (enforcement) {
-            enforcement.remove();
-            const backdrop = document.querySelector('tp-yt-iron-overlay-backdrop');
-            if (backdrop) backdrop.remove();
-            if (video && video.paused) video.play().catch(() => {});
-        }
-
         const dismissBtn = document.querySelector('tp-yt-paper-dialog #dismiss-button, #dismiss-button');
         if (dismissBtn && typeof dismissBtn.click === 'function') {
             dismissBtn.click();
         }
     }
 
-    setInterval(handleAds, 150);
+    setInterval(autoSkip, 500);
 })();
 """
 

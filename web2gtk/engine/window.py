@@ -566,16 +566,17 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         self.settings.set_media_playback_allows_inline(True)
         self.settings.set_media_playback_requires_user_gesture(False)
 
-        # Proactive memory management: purge media buffers and JS heaps before system OOM
-        try:
-            mps = WebKit.MemoryPressureSettings()
-            mps.set_memory_limit(2048)
-            mps.set_poll_interval(2.0)
-            mps.set_conservative_threshold(0.45)
-            mps.set_strict_threshold(0.75)
-            WebKit.NetworkSession.set_memory_pressure_settings(mps)
-        except Exception:
-            pass
+        # Proactive memory management: purge media buffers and JS heaps before system OOM (TikTok only)
+        if is_tiktok_app(self.manifest.url):
+            try:
+                mps = WebKit.MemoryPressureSettings()
+                mps.set_memory_limit(2048)
+                mps.set_poll_interval(2.0)
+                mps.set_conservative_threshold(0.45)
+                mps.set_strict_threshold(0.75)
+                WebKit.NetworkSession.set_memory_pressure_settings(mps)
+            except Exception:
+                pass
 
         # User Content Manager
         self.user_content_manager = WebKit.UserContentManager()
