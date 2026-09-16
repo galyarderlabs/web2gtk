@@ -20,7 +20,7 @@ except ImportError:
 
 STEALTH_SCRIPT = ""
 
-# Bounded URL-cached VirtualAudio pooler to prevent WebKitGTK/GStreamer pipeline explosion (e.g. Chess move sound packs)
+# WebAudio-backed VirtualAudio to completely bypass WebKitGTK/GStreamer playbin pipeline leak
 AUDIO_CLEANUP_SCRIPT = """
 (function() {
     try {
@@ -28,15 +28,22 @@ AUDIO_CLEANUP_SCRIPT = """
         if (typeof OrigAudio !== 'function') return;
 
         const origCreateElement = document.createElement;
-        const origPlay = HTMLMediaElement.prototype.play;
+        let audioCtx = null;
 
-        // Dedicated bounded sound cache keyed by canonical URL
-        // In Chess, move sounds are ~10 fixed sound URLs. Reusing the same player per sound URL
-        // prevents WebKitGTK/GStreamer from creating new decoder pipelines on every move.
-        const soundCache = new Map();
-        const MAX_CACHE = 16;
+        function getAudioContext() {
+            if (!audioCtx) {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (AC) audioCtx = new AC();
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume().catch(() => {});
+            }
+            return audioCtx;
+        }
+
+        const bufferCache = new Map();
         let lastPlayTime = 0;
-        const THROTTLE_MS = 25;
+        const THROTTLE_MS = 20;
 
         function normalizeUrl(url) {
             if (!url) return '';
@@ -47,35 +54,24 @@ AUDIO_CLEANUP_SCRIPT = """
             }
         }
 
-        function cleanupPlayer(p) {
-            if (!p) return;
-            try {
-                p.pause();
-                p.removeAttribute('src');
-                p.load();
-            } catch(e) {}
-        }
-
-        function getOrCreatePlayer(src) {
-            if (!src) return null;
-            const norm = normalizeUrl(src);
-            if (soundCache.has(norm)) {
-                return soundCache.get(norm);
+        function loadBuffer(url) {
+            const norm = normalizeUrl(url);
+            if (!norm) return Promise.reject(new Error('No URL'));
+            if (bufferCache.has(norm)) {
+                return bufferCache.get(norm);
             }
-            if (soundCache.size >= MAX_CACHE) {
-                // Evict oldest player with full pipeline teardown
-                const oldestKey = soundCache.keys().next().value;
-                const oldestPlayer = soundCache.get(oldestKey);
-                soundCache.delete(oldestKey);
-                cleanupPlayer(oldestPlayer);
-            }
-            const p = new OrigAudio(norm);
-            p.preload = 'auto';
-            soundCache.set(norm, p);
+            const p = (async () => {
+                const ctx = getAudioContext();
+                if (!ctx) throw new Error('No AudioContext');
+                const resp = await fetch(norm);
+                const arrayBuf = await resp.arrayBuffer();
+                return await ctx.decodeAudioData(arrayBuf);
+            })();
+            bufferCache.set(norm, p);
             return p;
         }
 
-        class PooledAudio extends EventTarget {
+        class WebAudioPlayer extends EventTarget {
             constructor(src) {
                 super();
                 this._src = normalizeUrl(src);
@@ -85,60 +81,43 @@ AUDIO_CLEANUP_SCRIPT = """
                 this._currentTime = 0;
                 this._loop = false;
                 this._paused = true;
+                this._currentSource = null;
+                if (this._src) {
+                    loadBuffer(this._src).catch(() => {});
+                }
             }
 
             get src() { return this._src; }
-            set src(v) { this._src = normalizeUrl(v); }
+            set src(v) {
+                this._src = normalizeUrl(v);
+                if (this._src) loadBuffer(this._src).catch(() => {});
+            }
             get currentSrc() { return this._src; }
 
             get volume() { return this._volume; }
-            set volume(v) {
-                this._volume = Math.max(0, Math.min(1, Number(v) || 0));
-                const p = soundCache.get(this._src);
-                if (p) p.volume = this._muted ? 0 : this._volume;
-            }
+            set volume(v) { this._volume = Math.max(0, Math.min(1, Number(v) || 0)); }
 
             get muted() { return this._muted; }
-            set muted(v) {
-                this._muted = Boolean(v);
-                const p = soundCache.get(this._src);
-                if (p) p.volume = this._muted ? 0 : this._volume;
-            }
+            set muted(v) { this._muted = Boolean(v); }
 
             get playbackRate() { return this._playbackRate; }
-            set playbackRate(v) {
-                this._playbackRate = Number(v) || 1.0;
-                const p = soundCache.get(this._src);
-                if (p) p.playbackRate = this._playbackRate;
-            }
+            set playbackRate(v) { this._playbackRate = Number(v) || 1.0; }
 
-            get currentTime() {
-                const p = soundCache.get(this._src);
-                return p ? p.currentTime : this._currentTime;
-            }
-            set currentTime(v) {
-                this._currentTime = Number(v) || 0;
-                const p = soundCache.get(this._src);
-                if (p) {
-                    try { p.currentTime = this._currentTime; } catch(e) {}
-                }
-            }
+            get currentTime() { return this._currentTime; }
+            set currentTime(v) { this._currentTime = Number(v) || 0; }
 
             get loop() { return this._loop; }
             set loop(v) { this._loop = Boolean(v); }
 
             get paused() { return this._paused; }
-            get duration() {
-                const p = soundCache.get(this._src);
-                return p ? p.duration : 0;
-            }
             get ended() { return this._paused; }
-            get preload() { return 'auto'; }
-            set preload(_) {}
+            get duration() { return 1.0; }
 
-            load() {}
+            load() {
+                if (this._src) loadBuffer(this._src).catch(() => {});
+            }
 
-            play() {
+            async play() {
                 const now = Date.now();
                 if (now - lastPlayTime < THROTTLE_MS) {
                     return Promise.resolve();
@@ -146,58 +125,59 @@ AUDIO_CLEANUP_SCRIPT = """
                 lastPlayTime = now;
 
                 if (!this._src) return Promise.resolve();
-
-                const player = getOrCreatePlayer(this._src);
-                if (!player) return Promise.resolve();
-
-                player.volume = this._muted ? 0 : this._volume;
-                player.playbackRate = this._playbackRate;
-                player.loop = this._loop;
+                const ctx = getAudioContext();
+                if (!ctx) return Promise.resolve();
 
                 try {
-                    player.currentTime = this._currentTime || 0;
-                } catch(e) {}
+                    const buf = await loadBuffer(this._src);
+                    const source = ctx.createBufferSource();
+                    const gain = ctx.createGain();
 
-                this._paused = false;
-                this.dispatchEvent(new Event('play'));
+                    source.buffer = buf;
+                    source.playbackRate.value = this._playbackRate;
+                    source.loop = this._loop;
+                    gain.gain.value = this._muted ? 0 : this._volume;
 
-                const onDone = () => {
+                    source.connect(gain);
+                    gain.connect(ctx.destination);
+
+                    if (this._currentSource) {
+                        try { this._currentSource.stop(); } catch(e) {}
+                    }
+                    this._currentSource = source;
+                    this._paused = false;
+                    this.dispatchEvent(new Event('play'));
+
+                    source.onended = () => {
+                        this._paused = true;
+                        this._currentSource = null;
+                        this.dispatchEvent(new Event('ended'));
+                    };
+
+                    source.start(0, this._currentTime || 0);
+                    return Promise.resolve();
+                } catch(err) {
                     this._paused = true;
-                    this._currentTime = 0;
-                    this.dispatchEvent(new Event('ended'));
-                };
-
-                player.onended = onDone;
-                player.onerror = onDone;
-
-                const playPromise = player.play();
-                if (playPromise && playPromise.catch) {
-                    return playPromise.catch(err => {
-                        onDone();
-                        throw err;
-                    });
+                    this.dispatchEvent(new Event('error'));
+                    return Promise.resolve();
                 }
-                return Promise.resolve();
             }
 
             pause() {
                 this._paused = true;
-                const p = soundCache.get(this._src);
-                if (p) {
-                    try { p.pause(); } catch(e) {}
+                if (this._currentSource) {
+                    try { this._currentSource.stop(); } catch(e) {}
+                    this._currentSource = null;
                 }
                 this.dispatchEvent(new Event('pause'));
             }
 
             canPlayType(type) {
-                const temp = new OrigAudio();
-                const res = temp.canPlayType ? temp.canPlayType(type) : '';
-                cleanupPlayer(temp);
-                return res;
+                return 'probably';
             }
 
             cloneNode() {
-                const c = new PooledAudio(this._src);
+                const c = new WebAudioPlayer(this._src);
                 c.volume = this._volume;
                 c.muted = this._muted;
                 c.playbackRate = this._playbackRate;
@@ -233,32 +213,16 @@ AUDIO_CLEANUP_SCRIPT = """
             }
         }
 
-        Object.setPrototypeOf(PooledAudio.prototype, OrigAudio.prototype);
-        Object.setPrototypeOf(PooledAudio, OrigAudio);
-        window.Audio = PooledAudio;
-        PooledAudio.prototype.constructor = PooledAudio;
+        Object.setPrototypeOf(WebAudioPlayer.prototype, OrigAudio.prototype);
+        Object.setPrototypeOf(WebAudioPlayer, OrigAudio);
+        window.Audio = WebAudioPlayer;
+        WebAudioPlayer.prototype.constructor = WebAudioPlayer;
 
-        // Intercept document.createElement('audio') so no sound element escapes pooling
         document.createElement = function(tagName, options) {
             if (typeof tagName === 'string' && tagName.toLowerCase() === 'audio') {
-                return new PooledAudio();
+                return new WebAudioPlayer();
             }
             return origCreateElement.call(document, tagName, options);
-        };
-
-        // Auto-cleanup hook on HTMLMediaElement.prototype.play for any untracked audio
-        HTMLMediaElement.prototype.play = function() {
-            if (this instanceof HTMLAudioElement && !this.__tracked) {
-                this.__tracked = true;
-                this.addEventListener('ended', () => {
-                    try {
-                        this.pause();
-                        this.removeAttribute('src');
-                        this.load();
-                    } catch(e) {}
-                }, { once: true });
-            }
-            return origPlay.apply(this, arguments);
         };
     } catch(e) {}
 })();
