@@ -151,7 +151,7 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         self.settings.set_javascript_can_open_windows_automatically(True)
 
         # Performance & GPU hardware acceleration
-        self.settings.set_hardware_acceleration_policy(WebKit.HardwareAccelerationPolicy.ON_DEMAND)
+        self.settings.set_hardware_acceleration_policy(WebKit.HardwareAccelerationPolicy.ALWAYS)
         self.settings.set_enable_smooth_scrolling(False)
         self.settings.set_enable_2d_canvas_acceleration(True)
         self.settings.set_enable_page_cache(True)
