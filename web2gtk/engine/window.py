@@ -20,38 +20,35 @@ except ImportError:
 
 STEALTH_SCRIPT = ""
 
-# Bounded VirtualAudio pooler to prevent WebKitGTK/GStreamer pipeline explosion (e.g. Chess move sound packs)
+# Bounded URL-cached VirtualAudio pooler to prevent WebKitGTK/GStreamer pipeline explosion (e.g. Chess move sound packs)
 AUDIO_CLEANUP_SCRIPT = """
 (function() {
     try {
         const OrigAudio = window.Audio;
         if (typeof OrigAudio !== 'function') return;
 
-        const MAX_PLAYERS = 3;
-        const activePlayers = [];
+        const origCreateElement = document.createElement;
+        const origPlay = HTMLMediaElement.prototype.play;
 
-        function acquirePlayer() {
-            for (let i = 0; i < activePlayers.length; i++) {
-                const p = activePlayers[i];
-                if (!p.__inUse) {
-                    p.__inUse = true;
-                    return p;
-                }
+        // Dedicated bounded sound cache keyed by canonical URL
+        // In Chess, move sounds are ~10 fixed sound URLs. Reusing the same player per sound URL
+        // prevents WebKitGTK/GStreamer from creating new decoder pipelines on every move.
+        const soundCache = new Map();
+        const MAX_CACHE = 16;
+        let lastPlayTime = 0;
+        const THROTTLE_MS = 25;
+
+        function normalizeUrl(url) {
+            if (!url) return '';
+            try {
+                return new URL(url, document.baseURI || window.location.href).href;
+            } catch(e) {
+                return String(url);
             }
-            if (activePlayers.length < MAX_PLAYERS) {
-                const p = new OrigAudio();
-                p.__inUse = true;
-                activePlayers.push(p);
-                return p;
-            }
-            const p = activePlayers[0];
-            try { p.pause(); } catch(e) {}
-            return p;
         }
 
-        function releasePlayer(p) {
+        function cleanupPlayer(p) {
             if (!p) return;
-            p.__inUse = false;
             try {
                 p.pause();
                 p.removeAttribute('src');
@@ -59,49 +56,71 @@ AUDIO_CLEANUP_SCRIPT = """
             } catch(e) {}
         }
 
-        class VirtualAudio extends EventTarget {
+        function getOrCreatePlayer(src) {
+            if (!src) return null;
+            const norm = normalizeUrl(src);
+            if (soundCache.has(norm)) {
+                return soundCache.get(norm);
+            }
+            if (soundCache.size >= MAX_CACHE) {
+                // Evict oldest player with full pipeline teardown
+                const oldestKey = soundCache.keys().next().value;
+                const oldestPlayer = soundCache.get(oldestKey);
+                soundCache.delete(oldestKey);
+                cleanupPlayer(oldestPlayer);
+            }
+            const p = new OrigAudio(norm);
+            p.preload = 'auto';
+            soundCache.set(norm, p);
+            return p;
+        }
+
+        class PooledAudio extends EventTarget {
             constructor(src) {
                 super();
-                this._src = src || '';
+                this._src = normalizeUrl(src);
                 this._volume = 1.0;
                 this._muted = false;
                 this._playbackRate = 1.0;
                 this._currentTime = 0;
                 this._loop = false;
                 this._paused = true;
-                this._currentPlayer = null;
             }
 
             get src() { return this._src; }
-            set src(v) { this._src = String(v || ''); }
+            set src(v) { this._src = normalizeUrl(v); }
             get currentSrc() { return this._src; }
 
             get volume() { return this._volume; }
             set volume(v) {
                 this._volume = Math.max(0, Math.min(1, Number(v) || 0));
-                if (this._currentPlayer) this._currentPlayer.volume = this._volume;
+                const p = soundCache.get(this._src);
+                if (p) p.volume = this._muted ? 0 : this._volume;
             }
 
             get muted() { return this._muted; }
             set muted(v) {
                 this._muted = Boolean(v);
-                if (this._currentPlayer) this._currentPlayer.muted = this._muted;
+                const p = soundCache.get(this._src);
+                if (p) p.volume = this._muted ? 0 : this._volume;
             }
 
             get playbackRate() { return this._playbackRate; }
             set playbackRate(v) {
                 this._playbackRate = Number(v) || 1.0;
-                if (this._currentPlayer) this._currentPlayer.playbackRate = this._playbackRate;
+                const p = soundCache.get(this._src);
+                if (p) p.playbackRate = this._playbackRate;
             }
 
             get currentTime() {
-                if (this._currentPlayer) return this._currentPlayer.currentTime;
-                return this._currentTime;
+                const p = soundCache.get(this._src);
+                return p ? p.currentTime : this._currentTime;
             }
             set currentTime(v) {
                 this._currentTime = Number(v) || 0;
-                if (this._currentPlayer) {
-                    try { this._currentPlayer.currentTime = this._currentTime; } catch(e) {}
+                const p = soundCache.get(this._src);
+                if (p) {
+                    try { p.currentTime = this._currentTime; } catch(e) {}
                 }
             }
 
@@ -109,59 +128,87 @@ AUDIO_CLEANUP_SCRIPT = """
             set loop(v) { this._loop = Boolean(v); }
 
             get paused() { return this._paused; }
-            get duration() { return this._currentPlayer ? this._currentPlayer.duration : 0; }
-            get ended() { return this._currentPlayer ? this._currentPlayer.ended : false; }
-            get preload() { return 'none'; }
+            get duration() {
+                const p = soundCache.get(this._src);
+                return p ? p.duration : 0;
+            }
+            get ended() { return this._paused; }
+            get preload() { return 'auto'; }
             set preload(_) {}
 
             load() {}
 
             play() {
-                this._paused = false;
+                const now = Date.now();
+                if (now - lastPlayTime < THROTTLE_MS) {
+                    return Promise.resolve();
+                }
+                lastPlayTime = now;
+
                 if (!this._src) return Promise.resolve();
 
-                if (this._currentPlayer) {
-                    releasePlayer(this._currentPlayer);
-                    this._currentPlayer = null;
-                }
+                const player = getOrCreatePlayer(this._src);
+                if (!player) return Promise.resolve();
 
-                const player = acquirePlayer();
-                this._currentPlayer = player;
-                player.src = this._src;
                 player.volume = this._muted ? 0 : this._volume;
                 player.playbackRate = this._playbackRate;
                 player.loop = this._loop;
-                if (this._currentTime > 0) {
-                    try { player.currentTime = this._currentTime; } catch(e) {}
-                }
+
+                try {
+                    player.currentTime = this._currentTime || 0;
+                } catch(e) {}
+
+                this._paused = false;
+                this.dispatchEvent(new Event('play'));
 
                 const onDone = () => {
-                    if (this._currentPlayer === player) {
-                        this._paused = true;
-                        this._currentTime = 0;
-                        releasePlayer(player);
-                        this._currentPlayer = null;
-                    }
+                    this._paused = true;
+                    this._currentTime = 0;
                     this.dispatchEvent(new Event('ended'));
                 };
 
                 player.onended = onDone;
                 player.onerror = onDone;
 
-                this.dispatchEvent(new Event('play'));
-                return player.play().catch(err => {
-                    onDone();
-                    throw err;
-                });
+                const playPromise = player.play();
+                if (playPromise && playPromise.catch) {
+                    return playPromise.catch(err => {
+                        onDone();
+                        throw err;
+                    });
+                }
+                return Promise.resolve();
+            }
+
+            pause() {
+                this._paused = true;
+                const p = soundCache.get(this._src);
+                if (p) {
+                    try { p.pause(); } catch(e) {}
+                }
+                this.dispatchEvent(new Event('pause'));
+            }
+
+            canPlayType(type) {
+                const temp = new OrigAudio();
+                const res = temp.canPlayType ? temp.canPlayType(type) : '';
+                cleanupPlayer(temp);
+                return res;
+            }
+
+            cloneNode() {
+                const c = new PooledAudio(this._src);
+                c.volume = this._volume;
+                c.muted = this._muted;
+                c.playbackRate = this._playbackRate;
+                return c;
             }
 
             setAttribute(name, val) {
                 if (name === 'src') this.src = val;
-                else if (name === 'preload') this.preload = val;
             }
             getAttribute(name) {
                 if (name === 'src') return this.src;
-                if (name === 'preload') return 'none';
                 return null;
             }
             removeAttribute(name) {
@@ -184,36 +231,35 @@ AUDIO_CLEANUP_SCRIPT = """
                 this._onplay = fn;
                 if (fn) this.addEventListener('play', fn);
             }
-
-            pause() {
-                this._paused = true;
-                if (this._currentPlayer) {
-                    this._currentTime = this._currentPlayer.currentTime;
-                    releasePlayer(this._currentPlayer);
-                    this._currentPlayer = null;
-                }
-                this.dispatchEvent(new Event('pause'));
-            }
-
-            canPlayType(type) {
-                const p = acquirePlayer();
-                const res = p.canPlayType ? p.canPlayType(type) : '';
-                releasePlayer(p);
-                return res;
-            }
-
-            cloneNode() {
-                const c = new VirtualAudio(this._src);
-                c.volume = this._volume;
-                c.muted = this._muted;
-                return c;
-            }
         }
 
-        Object.setPrototypeOf(VirtualAudio.prototype, OrigAudio.prototype);
-        Object.setPrototypeOf(VirtualAudio, OrigAudio);
-        window.Audio = VirtualAudio;
-        VirtualAudio.prototype.constructor = VirtualAudio;
+        Object.setPrototypeOf(PooledAudio.prototype, OrigAudio.prototype);
+        Object.setPrototypeOf(PooledAudio, OrigAudio);
+        window.Audio = PooledAudio;
+        PooledAudio.prototype.constructor = PooledAudio;
+
+        // Intercept document.createElement('audio') so no sound element escapes pooling
+        document.createElement = function(tagName, options) {
+            if (typeof tagName === 'string' && tagName.toLowerCase() === 'audio') {
+                return new PooledAudio();
+            }
+            return origCreateElement.call(document, tagName, options);
+        };
+
+        // Auto-cleanup hook on HTMLMediaElement.prototype.play for any untracked audio
+        HTMLMediaElement.prototype.play = function() {
+            if (this instanceof HTMLAudioElement && !this.__tracked) {
+                this.__tracked = true;
+                this.addEventListener('ended', () => {
+                    try {
+                        this.pause();
+                        this.removeAttribute('src');
+                        this.load();
+                    } catch(e) {}
+                }, { once: true });
+            }
+            return origPlay.apply(this, arguments);
+        };
     } catch(e) {}
 })();
 """
