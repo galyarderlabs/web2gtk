@@ -65,6 +65,24 @@ class Web2GtkApp(Adw.Application):
                     self.win.web_view.load_uri(uri)
                     break
 
+    def do_shutdown(self):
+        try:
+            if self.tray and hasattr(self.tray, "unregister"):
+                self.tray.unregister()
+        except Exception:
+            pass
+        try:
+            if self.win:
+                if hasattr(self.win, "web_view") and self.win.web_view:
+                    try:
+                        self.win.web_view.terminate_web_process()
+                    except Exception:
+                        pass
+                self.win.destroy()
+        except Exception:
+            pass
+        Adw.Application.do_shutdown(self)
+
     def setup_actions(self):
         def add_action(name, callback):
             action = Gio.SimpleAction.new(name, None)

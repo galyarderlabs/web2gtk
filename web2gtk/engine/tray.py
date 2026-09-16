@@ -192,3 +192,11 @@ class StatusNotifierTray:
         self.window.present()
         self.window.web_view.grab_focus()
         self.window.web_view.load_uri(self.manifest.url)
+
+    def unregister(self):
+        try:
+            if hasattr(self, "reg_id") and self.reg_id and self.bus:
+                self.bus.unregister_object(self.reg_id)
+                self.reg_id = None
+        except Exception:
+            pass
