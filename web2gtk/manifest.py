@@ -17,6 +17,11 @@ YOUTUBE_USER_AGENT = (
     "(KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 )
 
+SAFARI_MAC_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/18.3 Safari/605.1.15"
+)
+
 
 def slugify(text: str) -> str:
     """Convert text into a safe filesystem/CLI slug."""
@@ -53,9 +58,11 @@ class AppManifest:
         if not self.icon:
             self.icon = self.slug
 
-        # Ensure YouTube uses Safari UA to bypass Chrome BotGuard/PO-Token 1-minute playback cutoffs
+        # Ensure YouTube and ChatGPT use Safari UA to bypass Chrome BotGuard and Cloudflare Turnstile
         if "youtube.com" in (self.url or "").lower():
             self.user_agent = YOUTUBE_USER_AGENT
+        elif "chatgpt.com" in (self.url or "").lower() or "openai.com" in (self.url or "").lower():
+            self.user_agent = SAFARI_MAC_USER_AGENT
         elif not self.user_agent or "Version/18.0 Safari" in self.user_agent or "Version/60.5 Safari" in self.user_agent:
             self.user_agent = DEFAULT_USER_AGENT
 
