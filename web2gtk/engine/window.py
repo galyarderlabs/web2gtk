@@ -20,6 +20,204 @@ except ImportError:
 
 STEALTH_SCRIPT = ""
 
+# Bounded VirtualAudio pooler to prevent WebKitGTK/GStreamer pipeline explosion (e.g. Chess move sound packs)
+AUDIO_CLEANUP_SCRIPT = """
+(function() {
+    try {
+        const OrigAudio = window.Audio;
+        if (typeof OrigAudio !== 'function') return;
+
+        const MAX_PLAYERS = 3;
+        const activePlayers = [];
+
+        function acquirePlayer() {
+            for (let i = 0; i < activePlayers.length; i++) {
+                const p = activePlayers[i];
+                if (!p.__inUse) {
+                    p.__inUse = true;
+                    return p;
+                }
+            }
+            if (activePlayers.length < MAX_PLAYERS) {
+                const p = new OrigAudio();
+                p.__inUse = true;
+                activePlayers.push(p);
+                return p;
+            }
+            const p = activePlayers[0];
+            try { p.pause(); } catch(e) {}
+            return p;
+        }
+
+        function releasePlayer(p) {
+            if (!p) return;
+            p.__inUse = false;
+            try {
+                p.pause();
+                p.removeAttribute('src');
+                p.load();
+            } catch(e) {}
+        }
+
+        class VirtualAudio extends EventTarget {
+            constructor(src) {
+                super();
+                this._src = src || '';
+                this._volume = 1.0;
+                this._muted = false;
+                this._playbackRate = 1.0;
+                this._currentTime = 0;
+                this._loop = false;
+                this._paused = true;
+                this._currentPlayer = null;
+            }
+
+            get src() { return this._src; }
+            set src(v) { this._src = String(v || ''); }
+            get currentSrc() { return this._src; }
+
+            get volume() { return this._volume; }
+            set volume(v) {
+                this._volume = Math.max(0, Math.min(1, Number(v) || 0));
+                if (this._currentPlayer) this._currentPlayer.volume = this._volume;
+            }
+
+            get muted() { return this._muted; }
+            set muted(v) {
+                this._muted = Boolean(v);
+                if (this._currentPlayer) this._currentPlayer.muted = this._muted;
+            }
+
+            get playbackRate() { return this._playbackRate; }
+            set playbackRate(v) {
+                this._playbackRate = Number(v) || 1.0;
+                if (this._currentPlayer) this._currentPlayer.playbackRate = this._playbackRate;
+            }
+
+            get currentTime() {
+                if (this._currentPlayer) return this._currentPlayer.currentTime;
+                return this._currentTime;
+            }
+            set currentTime(v) {
+                this._currentTime = Number(v) || 0;
+                if (this._currentPlayer) {
+                    try { this._currentPlayer.currentTime = this._currentTime; } catch(e) {}
+                }
+            }
+
+            get loop() { return this._loop; }
+            set loop(v) { this._loop = Boolean(v); }
+
+            get paused() { return this._paused; }
+            get duration() { return this._currentPlayer ? this._currentPlayer.duration : 0; }
+            get ended() { return this._currentPlayer ? this._currentPlayer.ended : false; }
+            get preload() { return 'none'; }
+            set preload(_) {}
+
+            load() {}
+
+            play() {
+                this._paused = false;
+                if (!this._src) return Promise.resolve();
+
+                if (this._currentPlayer) {
+                    releasePlayer(this._currentPlayer);
+                    this._currentPlayer = null;
+                }
+
+                const player = acquirePlayer();
+                this._currentPlayer = player;
+                player.src = this._src;
+                player.volume = this._muted ? 0 : this._volume;
+                player.playbackRate = this._playbackRate;
+                player.loop = this._loop;
+                if (this._currentTime > 0) {
+                    try { player.currentTime = this._currentTime; } catch(e) {}
+                }
+
+                const onDone = () => {
+                    if (this._currentPlayer === player) {
+                        this._paused = true;
+                        this._currentTime = 0;
+                        releasePlayer(player);
+                        this._currentPlayer = null;
+                    }
+                    this.dispatchEvent(new Event('ended'));
+                };
+
+                player.onended = onDone;
+                player.onerror = onDone;
+
+                this.dispatchEvent(new Event('play'));
+                return player.play().catch(err => {
+                    onDone();
+                    throw err;
+                });
+            }
+
+            setAttribute(name, val) {
+                if (name === 'src') this.src = val;
+                else if (name === 'preload') this.preload = val;
+            }
+            getAttribute(name) {
+                if (name === 'src') return this.src;
+                if (name === 'preload') return 'none';
+                return null;
+            }
+            removeAttribute(name) {
+                if (name === 'src') this.src = '';
+            }
+            hasAttribute(name) {
+                if (name === 'src') return !!this._src;
+                return false;
+            }
+
+            get onended() { return this._onended; }
+            set onended(fn) {
+                if (this._onended) this.removeEventListener('ended', this._onended);
+                this._onended = fn;
+                if (fn) this.addEventListener('ended', fn);
+            }
+            get onplay() { return this._onplay; }
+            set onplay(fn) {
+                if (this._onplay) this.removeEventListener('play', this._onplay);
+                this._onplay = fn;
+                if (fn) this.addEventListener('play', fn);
+            }
+
+            pause() {
+                this._paused = true;
+                if (this._currentPlayer) {
+                    this._currentTime = this._currentPlayer.currentTime;
+                    releasePlayer(this._currentPlayer);
+                    this._currentPlayer = null;
+                }
+                this.dispatchEvent(new Event('pause'));
+            }
+
+            canPlayType(type) {
+                const p = acquirePlayer();
+                const res = p.canPlayType ? p.canPlayType(type) : '';
+                releasePlayer(p);
+                return res;
+            }
+
+            cloneNode() {
+                const c = new VirtualAudio(this._src);
+                c.volume = this._volume;
+                c.muted = this._muted;
+                return c;
+            }
+        }
+
+        Object.setPrototypeOf(VirtualAudio.prototype, OrigAudio.prototype);
+        Object.setPrototypeOf(VirtualAudio, OrigAudio);
+        window.Audio = VirtualAudio;
+        VirtualAudio.prototype.constructor = VirtualAudio;
+    } catch(e) {}
+})();
+"""
+
 AUTH_DOMAINS = (
     "accounts.google.com",
     "appleid.apple.com",
@@ -88,6 +286,16 @@ def is_same_app_domain(url_str, app_url):
     except Exception:
         pass
     return False
+
+
+def is_chess_app(url_str):
+    if not url_str:
+        return False
+    try:
+        host = urlparse(url_str).netloc.lower()
+        return "chess.com" in host or "lichess.org" in host
+    except Exception:
+        return False
 
 
 DOWNLOAD_DIR = os.path.expanduser("~/Downloads")
@@ -181,6 +389,15 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         # Setup built-in adblocking & YouTube ad-skipping
         if getattr(self.manifest, "adblock", True):
             setup_adblock(self.user_content_manager, self.manifest.cache_dir, self.manifest.url)
+
+        # Chess audio pipeline leak mitigation (bounded VirtualAudio pooler)
+        if is_chess_app(self.manifest.url):
+            audio_cleanup_script = WebKit.UserScript(
+                source=AUDIO_CLEANUP_SCRIPT,
+                injected_frames=WebKit.UserContentInjectedFrames.ALL_FRAMES,
+                injection_time=WebKit.UserScriptInjectionTime.START
+            )
+            self.user_content_manager.add_script(audio_cleanup_script)
 
         # Ensure keyboard focus is on web_view when window becomes active
         self.connect("notify::is-active", self.on_window_active_changed)
