@@ -55,6 +55,15 @@ class TestWeb2Gtk(unittest.TestCase):
         uninstall_app("export-test-gtk", purge_data=True)
         shutil.rmtree("/tmp/web2gtk_test_dist", ignore_errors=True)
 
+    def test_chess_audio_detection_and_script(self):
+        from web2gtk.engine.window import is_chess_app, AUDIO_CLEANUP_SCRIPT
+        self.assertTrue(is_chess_app("https://www.chess.com"))
+        self.assertTrue(is_chess_app("https://lichess.org"))
+        self.assertFalse(is_chess_app("https://youtube.com"))
+        self.assertIn("HTMLAudioElement.prototype", AUDIO_CLEANUP_SCRIPT)
+        self.assertIn("HTMLMediaElement.prototype", AUDIO_CLEANUP_SCRIPT)
+        self.assertIn("VirtualAudioPlayer", AUDIO_CLEANUP_SCRIPT)
+
 
 if __name__ == "__main__":
     unittest.main()

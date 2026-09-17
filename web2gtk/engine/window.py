@@ -25,11 +25,10 @@ AUDIO_CLEANUP_SCRIPT = """
 (function() {
     try {
         const OrigAudio = window.Audio;
-        if (typeof OrigAudio !== 'function') return;
-
         const origCreateElement = document.createElement;
-        let audioCtx = null;
+        const origCreateElementNS = document.createElementNS;
 
+        let audioCtx = null;
         function getAudioContext() {
             if (!audioCtx) {
                 const AC = window.AudioContext || window.webkitAudioContext;
@@ -41,9 +40,17 @@ AUDIO_CLEANUP_SCRIPT = """
             return audioCtx;
         }
 
+        ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(evt => {
+            window.addEventListener(evt, () => {
+                if (audioCtx && audioCtx.state === 'suspended') {
+                    audioCtx.resume().catch(() => {});
+                }
+            }, { passive: true, capture: true });
+        });
+
         const bufferCache = new Map();
         let lastPlayTime = 0;
-        const THROTTLE_MS = 20;
+        const THROTTLE_MS = 15;
 
         function normalizeUrl(url) {
             if (!url) return '';
@@ -71,59 +78,31 @@ AUDIO_CLEANUP_SCRIPT = """
             return p;
         }
 
-        class WebAudioPlayer extends EventTarget {
-            constructor(src) {
-                super();
-                this._src = normalizeUrl(src);
-                this._volume = 1.0;
-                this._muted = false;
-                this._playbackRate = 1.0;
-                this._currentTime = 0;
-                this._loop = false;
-                this._paused = true;
+        class VirtualAudioPlayer {
+            constructor(target, src) {
+                this.target = target;
+                this.src = normalizeUrl(src);
+                this.volume = 1.0;
+                this.muted = false;
+                this.playbackRate = 1.0;
+                this.currentTime = 0;
+                this.loop = false;
+                this.paused = true;
+                this.ended = true;
+                this.duration = 1.0;
                 this._currentSource = null;
-                if (this._src) {
-                    this._triggerReady();
+                if (this.src) {
+                    this.load();
                 }
             }
 
-            _triggerReady() {
-                if (!this._src) return;
-                loadBuffer(this._src).then(() => {
-                    this.dispatchEvent(new Event('canplay'));
-                    this.dispatchEvent(new Event('canplaythrough'));
-                }).catch(() => {});
-            }
-
-            get readyState() { return 4; }
-            get src() { return this._src; }
-            set src(v) {
-                this._src = normalizeUrl(v);
-                if (this._src) this._triggerReady();
-            }
-            get currentSrc() { return this._src; }
-
-            get volume() { return this._volume; }
-            set volume(v) { this._volume = Math.max(0, Math.min(1, Number(v) || 0)); }
-
-            get muted() { return this._muted; }
-            set muted(v) { this._muted = Boolean(v); }
-
-            get playbackRate() { return this._playbackRate; }
-            set playbackRate(v) { this._playbackRate = Number(v) || 1.0; }
-
-            get currentTime() { return this._currentTime; }
-            set currentTime(v) { this._currentTime = Number(v) || 0; }
-
-            get loop() { return this._loop; }
-            set loop(v) { this._loop = Boolean(v); }
-
-            get paused() { return this._paused; }
-            get ended() { return this._paused; }
-            get duration() { return 1.0; }
-
             load() {
-                if (this._src) this._triggerReady();
+                if (!this.src) return;
+                loadBuffer(this.src).then(buf => {
+                    if (buf && buf.duration) this.duration = buf.duration;
+                    this.target.dispatchEvent(new Event('canplay'));
+                    this.target.dispatchEvent(new Event('canplaythrough'));
+                }).catch(() => {});
             }
 
             async play() {
@@ -133,19 +112,21 @@ AUDIO_CLEANUP_SCRIPT = """
                 }
                 lastPlayTime = now;
 
-                if (!this._src) return Promise.resolve();
+                if (!this.src) return Promise.resolve();
                 const ctx = getAudioContext();
                 if (!ctx) return Promise.resolve();
 
                 try {
-                    const buf = await loadBuffer(this._src);
+                    const buf = await loadBuffer(this.src);
+                    if (buf && buf.duration) this.duration = buf.duration;
+
                     const source = ctx.createBufferSource();
                     const gain = ctx.createGain();
 
                     source.buffer = buf;
-                    source.playbackRate.value = this._playbackRate;
-                    source.loop = this._loop;
-                    gain.gain.value = this._muted ? 0 : this._volume;
+                    source.playbackRate.value = this.playbackRate;
+                    source.loop = this.loop;
+                    gain.gain.value = this.muted ? 0 : this.volume;
 
                     source.connect(gain);
                     gain.connect(ctx.destination);
@@ -154,93 +135,233 @@ AUDIO_CLEANUP_SCRIPT = """
                         try { this._currentSource.stop(); } catch(e) {}
                     }
                     this._currentSource = source;
-                    this._paused = false;
-                    this.dispatchEvent(new Event('play'));
+                    this.paused = false;
+                    this.ended = false;
 
                     source.onended = () => {
-                        this._paused = true;
+                        this.paused = true;
+                        this.ended = true;
                         this._currentSource = null;
-                        this.dispatchEvent(new Event('ended'));
+                        this.target.dispatchEvent(new Event('ended'));
                     };
 
-                    source.start(0, this._currentTime || 0);
+                    source.start(0, this.currentTime || 0);
                     return Promise.resolve();
                 } catch(err) {
-                    this._paused = true;
-                    this.dispatchEvent(new Event('error'));
+                    this.paused = true;
+                    this.ended = true;
+                    this.target.dispatchEvent(new Event('error'));
                     return Promise.resolve();
                 }
             }
 
             pause() {
-                this._paused = true;
+                this.paused = true;
                 if (this._currentSource) {
                     try { this._currentSource.stop(); } catch(e) {}
                     this._currentSource = null;
                 }
-                this.dispatchEvent(new Event('pause'));
-            }
-
-            canPlayType(type) {
-                return 'probably';
-            }
-
-            cloneNode() {
-                const c = new WebAudioPlayer(this._src);
-                c.volume = this._volume;
-                c.muted = this._muted;
-                c.playbackRate = this._playbackRate;
-                return c;
-            }
-
-            setAttribute(name, val) {
-                if (name === 'src') this.src = val;
-            }
-            getAttribute(name) {
-                if (name === 'src') return this.src;
-                return null;
-            }
-            removeAttribute(name) {
-                if (name === 'src') this.src = '';
-            }
-            hasAttribute(name) {
-                if (name === 'src') return !!this._src;
-                return false;
-            }
-
-            get onended() { return this._onended; }
-            set onended(fn) {
-                if (this._onended) this.removeEventListener('ended', this._onended);
-                this._onended = fn;
-                if (fn) this.addEventListener('ended', fn);
-            }
-            get onplay() { return this._onplay; }
-            set onplay(fn) {
-                if (this._onplay) this.removeEventListener('play', this._onplay);
-                this._onplay = fn;
-                if (fn) this.addEventListener('play', fn);
             }
         }
 
-        Object.setPrototypeOf(WebAudioPlayer.prototype, OrigAudio.prototype);
-        Object.setPrototypeOf(WebAudioPlayer, OrigAudio);
-        window.Audio = WebAudioPlayer;
-        WebAudioPlayer.prototype.constructor = WebAudioPlayer;
-
-        document.createElement = function(tagName, options) {
-            if (typeof tagName === 'string' && tagName.toLowerCase() === 'audio') {
-                return new WebAudioPlayer();
+        function getPlayer(el) {
+            if (!el._virtualPlayer) {
+                el._virtualPlayer = new VirtualAudioPlayer(el, el._virtualSrc || '');
             }
-            return origCreateElement.call(document, tagName, options);
+            return el._virtualPlayer;
+        }
+
+        Object.defineProperty(HTMLAudioElement.prototype, 'src', {
+            get() {
+                return this._virtualPlayer ? this._virtualPlayer.src : (this._virtualSrc || '');
+            },
+            set(v) {
+                const norm = normalizeUrl(v);
+                this._virtualSrc = norm;
+                const p = getPlayer(this);
+                p.src = norm;
+                p.load();
+            },
+            configurable: true,
+            enumerable: true
+        });
+
+        Object.defineProperty(HTMLAudioElement.prototype, 'currentSrc', {
+            get() { return this.src; },
+            configurable: true,
+            enumerable: true
+        });
+
+        Object.defineProperty(HTMLAudioElement.prototype, 'readyState', {
+            get() { return 4; },
+            configurable: true
+        });
+
+        Object.defineProperty(HTMLAudioElement.prototype, 'duration', {
+            get() { return getPlayer(this).duration; },
+            configurable: true
+        });
+
+        Object.defineProperty(HTMLAudioElement.prototype, 'volume', {
+            get() { return getPlayer(this).volume; },
+            set(v) { getPlayer(this).volume = Math.max(0, Math.min(1, Number(v) || 0)); },
+            configurable: true
+        });
+
+        Object.defineProperty(HTMLAudioElement.prototype, 'muted', {
+            get() { return getPlayer(this).muted; },
+            set(v) { getPlayer(this).muted = Boolean(v); },
+            configurable: true
+        });
+
+        Object.defineProperty(HTMLAudioElement.prototype, 'playbackRate', {
+            get() { return getPlayer(this).playbackRate; },
+            set(v) { getPlayer(this).playbackRate = Number(v) || 1.0; },
+            configurable: true
+        });
+
+        Object.defineProperty(HTMLAudioElement.prototype, 'currentTime', {
+            get() { return getPlayer(this).currentTime; },
+            set(v) { getPlayer(this).currentTime = Number(v) || 0; },
+            configurable: true
+        });
+
+        Object.defineProperty(HTMLAudioElement.prototype, 'loop', {
+            get() { return getPlayer(this).loop; },
+            set(v) { getPlayer(this).loop = Boolean(v); },
+            configurable: true
+        });
+
+        Object.defineProperty(HTMLAudioElement.prototype, 'paused', {
+            get() { return getPlayer(this).paused; },
+            configurable: true
+        });
+
+        Object.defineProperty(HTMLAudioElement.prototype, 'ended', {
+            get() { return getPlayer(this).ended; },
+            configurable: true
+        });
+
+        HTMLAudioElement.prototype.play = function() {
+            this.dispatchEvent(new Event('play'));
+            return getPlayer(this).play().then(() => {
+                this.dispatchEvent(new Event('playing'));
+            });
         };
 
-        const origCreateElementNS = document.createElementNS;
-        document.createElementNS = function(ns, tagName, options) {
-            if (typeof tagName === 'string' && tagName.toLowerCase() === 'audio') {
-                return new WebAudioPlayer();
-            }
-            return origCreateElementNS.call(document, ns, tagName, options);
+        HTMLAudioElement.prototype.pause = function() {
+            getPlayer(this).pause();
+            this.dispatchEvent(new Event('pause'));
         };
+
+        HTMLAudioElement.prototype.load = function() {
+            getPlayer(this).load();
+        };
+
+        HTMLAudioElement.prototype.canPlayType = function(type) {
+            return 'probably';
+        };
+
+        HTMLAudioElement.prototype.cloneNode = function(deep) {
+            const c = origCreateElement.call(document, 'audio');
+            c.src = this.src;
+            c.volume = this.volume;
+            c.muted = this.muted;
+            c.playbackRate = this.playbackRate;
+            return c;
+        };
+
+        const origMediaSrcDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
+        if (origMediaSrcDesc && origMediaSrcDesc.set) {
+            const origSet = origMediaSrcDesc.set;
+            const origGet = origMediaSrcDesc.get;
+            Object.defineProperty(HTMLMediaElement.prototype, 'src', {
+                get() {
+                    if (this instanceof HTMLAudioElement || (this.tagName && this.tagName.toLowerCase() === 'audio')) {
+                        return this.src;
+                    }
+                    return origGet.call(this);
+                },
+                set(v) {
+                    if (this instanceof HTMLAudioElement || (this.tagName && this.tagName.toLowerCase() === 'audio')) {
+                        this.src = v;
+                        return;
+                    }
+                    return origSet.call(this, v);
+                },
+                configurable: true,
+                enumerable: true
+            });
+        }
+
+        const origMediaPlay = HTMLMediaElement.prototype.play;
+        HTMLMediaElement.prototype.play = function() {
+            if (this instanceof HTMLAudioElement || (this.tagName && this.tagName.toLowerCase() === 'audio')) {
+                return this.play();
+            }
+            return origMediaPlay.call(this);
+        };
+
+        const origMediaPause = HTMLMediaElement.prototype.pause;
+        HTMLMediaElement.prototype.pause = function() {
+            if (this instanceof HTMLAudioElement || (this.tagName && this.tagName.toLowerCase() === 'audio')) {
+                return this.pause();
+            }
+            return origMediaPause.call(this);
+        };
+
+        const origMediaLoad = HTMLMediaElement.prototype.load;
+        HTMLMediaElement.prototype.load = function() {
+            if (this instanceof HTMLAudioElement || (this.tagName && this.tagName.toLowerCase() === 'audio')) {
+                return this.load();
+            }
+            return origMediaLoad.call(this);
+        };
+
+        const origSetAttr = Element.prototype.setAttribute;
+        Element.prototype.setAttribute = function(name, val) {
+            if (this instanceof HTMLAudioElement && typeof name === 'string' && name.toLowerCase() === 'src') {
+                this.src = val;
+                return;
+            }
+            return origSetAttr.call(this, name, val);
+        };
+
+        const origGetAttr = Element.prototype.getAttribute;
+        Element.prototype.getAttribute = function(name) {
+            if (this instanceof HTMLAudioElement && typeof name === 'string' && name.toLowerCase() === 'src') {
+                return this.src;
+            }
+            return origGetAttr.call(this, name);
+        };
+
+        const origHasAttr = Element.prototype.hasAttribute;
+        Element.prototype.hasAttribute = function(name) {
+            if (this instanceof HTMLAudioElement && typeof name === 'string' && name.toLowerCase() === 'src') {
+                return Boolean(this.src);
+            }
+            return origHasAttr.call(this, name);
+        };
+
+        const origRemoveAttr = Element.prototype.removeAttribute;
+        Element.prototype.removeAttribute = function(name) {
+            if (this instanceof HTMLAudioElement && typeof name === 'string' && name.toLowerCase() === 'src') {
+                this.src = '';
+                return;
+            }
+            return origRemoveAttr.call(this, name);
+        };
+
+        function CustomAudio(src) {
+            const a = origCreateElement.call(document, 'audio');
+            if (src) a.src = src;
+            return a;
+        }
+        if (OrigAudio) {
+            CustomAudio.prototype = OrigAudio.prototype;
+            Object.setPrototypeOf(CustomAudio, OrigAudio);
+        }
+        window.Audio = CustomAudio;
     } catch(e) {}
 })();
 """
@@ -397,15 +518,8 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         self.settings.set_enable_back_forward_navigation_gestures(True)
         self.settings.set_enable_webgl(True)
         self.settings.set_enable_webaudio(True)
-        if is_chess_app(self.manifest.url):
-            # Chess apps only use audio sound effects. Disabling HTML media elements completely
-            # eliminates WebKitGTK GStreamer playbin pipeline leaks and decoder thread explosion (330+ threads).
-            # WebAudio API remains enabled and handles all board sound effects cleanly via AudioContext.
-            self.settings.set_enable_media(False)
-            self.settings.set_enable_mediasource(False)
-        else:
-            self.settings.set_enable_media(True)
-            self.settings.set_enable_mediasource(True)
+        self.settings.set_enable_media(True)
+        self.settings.set_enable_mediasource(True)
         self.settings.set_enable_media_capabilities(True)
         self.settings.set_media_playback_allows_inline(True)
         self.settings.set_media_playback_requires_user_gesture(False)
