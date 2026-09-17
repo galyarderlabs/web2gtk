@@ -224,6 +224,14 @@ AUDIO_CLEANUP_SCRIPT = """
             }
             return origCreateElement.call(document, tagName, options);
         };
+
+        const origCreateElementNS = document.createElementNS;
+        document.createElementNS = function(ns, tagName, options) {
+            if (typeof tagName === 'string' && tagName.toLowerCase() === 'audio') {
+                return new WebAudioPlayer();
+            }
+            return origCreateElementNS.call(document, ns, tagName, options);
+        };
     } catch(e) {}
 })();
 """
@@ -379,8 +387,16 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         self.settings.set_enable_page_cache(True)
         self.settings.set_enable_back_forward_navigation_gestures(True)
         self.settings.set_enable_webgl(True)
-        self.settings.set_enable_media(True)
-        self.settings.set_enable_mediasource(True)
+        self.settings.set_enable_webaudio(True)
+        if is_chess_app(self.manifest.url):
+            # Chess apps only use audio sound effects. Disabling HTML media elements completely
+            # eliminates WebKitGTK GStreamer playbin pipeline leaks and decoder thread explosion (330+ threads).
+            # WebAudio API remains enabled and handles all board sound effects cleanly via AudioContext.
+            self.settings.set_enable_media(False)
+            self.settings.set_enable_mediasource(False)
+        else:
+            self.settings.set_enable_media(True)
+            self.settings.set_enable_mediasource(True)
         self.settings.set_enable_media_capabilities(True)
         self.settings.set_media_playback_allows_inline(True)
         self.settings.set_media_playback_requires_user_gesture(False)
@@ -620,11 +636,16 @@ class Web2GtkWindow(Adw.ApplicationWindow):
                 notif.set_body(body)
                 notif.set_priority(Gio.NotificationPriority.HIGH)
                 self.app.send_notification(f"{self.manifest.slug}-reply", notif)
+                self._has_sent_notification = True
 
     def on_visibility_changed(self, *_):
-        if self.get_visible():
+        if self.get_visible() and getattr(self, "_has_sent_notification", False):
             self._last_notified_title = None
-            self.app.withdraw_notification(f"{self.manifest.slug}-reply")
+            self._has_sent_notification = False
+            try:
+                self.app.withdraw_notification(f"{self.manifest.slug}-reply")
+            except Exception:
+                pass
 
     def on_uri_changed(self, web_view, _):
         uri = web_view.get_uri()
