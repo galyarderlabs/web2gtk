@@ -83,14 +83,23 @@ AUDIO_CLEANUP_SCRIPT = """
                 this._paused = true;
                 this._currentSource = null;
                 if (this._src) {
-                    loadBuffer(this._src).catch(() => {});
+                    this._triggerReady();
                 }
             }
 
+            _triggerReady() {
+                if (!this._src) return;
+                loadBuffer(this._src).then(() => {
+                    this.dispatchEvent(new Event('canplay'));
+                    this.dispatchEvent(new Event('canplaythrough'));
+                }).catch(() => {});
+            }
+
+            get readyState() { return 4; }
             get src() { return this._src; }
             set src(v) {
                 this._src = normalizeUrl(v);
-                if (this._src) loadBuffer(this._src).catch(() => {});
+                if (this._src) this._triggerReady();
             }
             get currentSrc() { return this._src; }
 
@@ -114,7 +123,7 @@ AUDIO_CLEANUP_SCRIPT = """
             get duration() { return 1.0; }
 
             load() {
-                if (this._src) loadBuffer(this._src).catch(() => {});
+                if (this._src) this._triggerReady();
             }
 
             async play() {
@@ -486,9 +495,9 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         # Primary WebView
         self.web_view = WebKit.WebView(
             network_session=self.session,
-            user_content_manager=self.user_content_manager
+            user_content_manager=self.user_content_manager,
+            settings=self.settings
         )
-        self.web_view.set_settings(self.settings)
         bg = Gdk.RGBA()
         bg.parse("#101010")
         self.web_view.set_background_color(bg)
@@ -759,9 +768,9 @@ class Web2GtkWindow(Adw.ApplicationWindow):
         # Related view automatically inherits the parent view's network session
         popup_web_view = WebKit.WebView(
             related_view=web_view,
-            user_content_manager=self.user_content_manager
+            user_content_manager=self.user_content_manager,
+            settings=self.settings
         )
-        popup_web_view.set_settings(self.settings)
         popup_web_view.set_vexpand(True)
         popup_web_view.set_hexpand(True)
         popup_box.append(popup_web_view)
