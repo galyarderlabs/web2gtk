@@ -60,9 +60,8 @@ class TestWeb2Gtk(unittest.TestCase):
         self.assertTrue(is_chess_app("https://www.chess.com"))
         self.assertTrue(is_chess_app("https://lichess.org"))
         self.assertFalse(is_chess_app("https://youtube.com"))
-        self.assertIn("HTMLAudioElement.prototype", AUDIO_CLEANUP_SCRIPT)
-        self.assertIn("HTMLMediaElement.prototype", AUDIO_CLEANUP_SCRIPT)
-        self.assertIn("VirtualAudioPlayer", AUDIO_CLEANUP_SCRIPT)
+        self.assertIn("WebAudioPlayer", AUDIO_CLEANUP_SCRIPT)
+        self.assertIn("HTMLAudioElement", AUDIO_CLEANUP_SCRIPT)
 
 
 if __name__ == "__main__":
