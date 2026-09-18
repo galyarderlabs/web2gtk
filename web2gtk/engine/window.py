@@ -102,6 +102,14 @@ AUDIO_CLEANUP_SCRIPT = """
             get currentSrc() { return this._src; }
             get preload() { return this._preload; }
             set preload(v) { this._preload = String(v); }
+            get crossOrigin() { return this._crossOrigin || ''; }
+            set crossOrigin(v) { this._crossOrigin = String(v); }
+            get autoplay() { return false; }
+            set autoplay(v) {}
+            get defaultMuted() { return false; }
+            set defaultMuted(v) {}
+            get defaultPlaybackRate() { return 1.0; }
+            set defaultPlaybackRate(v) {}
             get readyState() { return 4; }
             get networkState() { return 1; }
             get duration() { return this._duration; }
@@ -123,13 +131,14 @@ AUDIO_CLEANUP_SCRIPT = """
 
             load() {
                 if (!this._src) return;
+                this.dispatchEvent(new Event('loadstart'));
                 loadBuffer(this._src).then(buf => {
                     if (buf && buf.duration) this._duration = buf.duration;
+                    this.dispatchEvent(new Event('loadedmetadata'));
+                    this.dispatchEvent(new Event('loadeddata'));
                     this.dispatchEvent(new Event('canplay'));
                     this.dispatchEvent(new Event('canplaythrough'));
                     this.dispatchEvent(new Event('load'));
-                    this.dispatchEvent(new Event('loadeddata'));
-                    this.dispatchEvent(new Event('loadedmetadata'));
                 }).catch(() => {
                     this.dispatchEvent(new Event('canplay'));
                     this.dispatchEvent(new Event('canplaythrough'));
@@ -248,10 +257,6 @@ AUDIO_CLEANUP_SCRIPT = """
             }
         }
 
-        if (OrigAudio) {
-            Object.setPrototypeOf(WebAudioPlayer.prototype, OrigAudio.prototype);
-            Object.setPrototypeOf(WebAudioPlayer, OrigAudio);
-        }
         window.Audio = WebAudioPlayer;
         WebAudioPlayer.prototype.constructor = WebAudioPlayer;
 
@@ -272,6 +277,15 @@ AUDIO_CLEANUP_SCRIPT = """
         if (typeof HTMLAudioElement !== 'undefined') {
             try {
                 Object.defineProperty(HTMLAudioElement, Symbol.hasInstance, {
+                    value: function(inst) {
+                        return inst instanceof WebAudioPlayer || inst instanceof HTMLMediaElement;
+                    }
+                });
+            } catch(e) {}
+        }
+        if (typeof HTMLMediaElement !== 'undefined') {
+            try {
+                Object.defineProperty(HTMLMediaElement, Symbol.hasInstance, {
                     value: function(inst) {
                         return inst instanceof WebAudioPlayer || inst instanceof HTMLMediaElement;
                     }
